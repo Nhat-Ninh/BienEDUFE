@@ -30,9 +30,11 @@ api.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config
+    const url = originalRequest?.url || ''
+    const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh')
     
-    // Nếu token hết hạn (401) và chưa thử refresh
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Nếu token hết hạn (401), không phải endpoint auth và chưa thử refresh
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true
       const refreshToken = localStorage.getItem('bienedu_refresh_token')
       
@@ -51,13 +53,13 @@ api.interceptors.response.use(
           localStorage.removeItem('bienedu_access_token')
           localStorage.removeItem('bienedu_refresh_token')
           localStorage.removeItem('bienedu_user')
-          window.location.href = '/login?expired=true'
+          window.location.href = '/auth/login?expired=true'
           return Promise.reject(refreshErr)
         }
       } else {
         localStorage.removeItem('bienedu_access_token')
         localStorage.removeItem('bienedu_user')
-        window.location.href = '/login'
+        window.location.href = '/auth/login'
       }
     }
     

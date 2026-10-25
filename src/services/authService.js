@@ -6,7 +6,11 @@ export const authService = {
    * @param {{ phoneOrEmail: string, password: string }} credentials 
    */
   async login(credentials) {
-    return await api.post('/api/v1/auth/login', credentials)
+    const payload = {
+      identifier: credentials.identifier || credentials.phoneOrEmail,
+      password: credentials.password
+    }
+    return await api.post('/api/v1/auth/login', payload)
   },
 
   /**
