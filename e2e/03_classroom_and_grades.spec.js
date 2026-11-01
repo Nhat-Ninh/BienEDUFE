@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { call, login } from './support/api.js'
 
 test.describe('3. Classroom Management & Multi-Grade Workflows', () => {
   const teacherPhone = '0987654321' // Thầy Biển Toán
@@ -11,6 +12,10 @@ test.describe('3. Classroom Management & Multi-Grade Workflows', () => {
   })
 
   test('Giáo viên đăng nhập, tạo lớp học đa khối lớp (Lớp 6, 9, 12) và lọc theo khối', async ({ page }) => {
+    // Dựng sẵn một lớp khối 12 bằng API TRƯỚC khi đăng nhập trình duyệt (hệ thống chỉ cho 1 phiên/tài khoản)
+    const api = await login(teacherPhone)
+    await call('POST', '/api/v1/classes', { token: api.token, body: { name: `Toán 12 Lọc ${Date.now()}`, gradeLevel: 12, description: 'lớp khối 12' } })
+
     // 1. Đăng nhập giáo viên
     await page.goto('/auth/login')
     await page.fill('input[type="text"]', teacherPhone)

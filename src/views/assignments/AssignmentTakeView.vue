@@ -35,35 +35,7 @@ onMounted(async () => {
     const assignRes = await assignmentService.getDetailStudent(assignmentId)
     
     assignment.value = assignRes.data || assignRes
-    exercises.value = assignment.value?.exercises || [
-      {
-        id: 1,
-        type: 'MULTIPLE_CHOICE',
-        content: 'Cho hàm số $y = x^3 - 3x^2 + 2$. Điểm cực đại của đồ thị hàm số đã cho là:',
-        choices: [
-          { key: 'A', text: '$(0; 2)$' },
-          { key: 'B', text: '$(2; -2)$' },
-          { key: 'C', text: '$(0; -2)$' },
-          { key: 'D', text: '$(2; 2)$' }
-        ]
-      },
-      {
-        id: 2,
-        type: 'MULTIPLE_CHOICE',
-        content: 'Tính tích phân $I = \\int_{0}^{1} e^{2x} \\, dx$.',
-        choices: [
-          { key: 'A', text: '$I = \\frac{e^2 - 1}{2}$' },
-          { key: 'B', text: '$I = e^2 - 1$' },
-          { key: 'C', text: '$I = \\frac{e^2 + 1}{2}$' },
-          { key: 'D', text: '$I = 2(e^2 - 1)$' }
-        ]
-      },
-      {
-        id: 3,
-        type: 'SHORT_ANSWER',
-        content: 'Trong không gian $Oxyz$, cho mặt cầu $(S): (x-1)^2 + (y+2)^2 + (z-3)^2 = 25$. Tìm bán kính $R$ của mặt cầu $(S)$.'
-      }
-    ]
+    exercises.value = assignment.value?.exercises || []
 
     // Khôi phục câu trả lời từ localStorage nếu có
     const saved = localStorage.getItem(`bienedu_exam_${assignmentId}`)
@@ -94,6 +66,12 @@ const selectChoice = (key) => {
   if (!currentExercise.value) return
   answers.value[currentExercise.value.id] = key
   // Autosave
+  localStorage.setItem(`bienedu_exam_${assignmentId}`, JSON.stringify(answers.value))
+}
+
+const setTextAnswer = (value) => {
+  if (!currentExercise.value) return
+  answers.value[currentExercise.value.id] = value
   localStorage.setItem(`bienedu_exam_${assignmentId}`, JSON.stringify(answers.value))
 }
 
@@ -222,7 +200,7 @@ const handleSubmit = async () => {
         <label class="block text-xs font-semibold text-slate-600 mb-1">Điền đáp số của bạn:</label>
         <input 
           :value="answers[currentExercise.id] || ''"
-          @input="e => { answers[currentExercise.id] = e.target.value; localStorage.setItem(`bienedu_exam_${assignmentId}`, JSON.stringify(answers)); }"
+          @input="e => setTextAnswer(e.target.value)"
           type="text" 
           placeholder="Ví dụ: 5 hoặc -3/2"
           class="w-full sm:w-64 px-4 py-2.5 text-sm font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-ocean-500 outline-none"
@@ -234,7 +212,7 @@ const handleSubmit = async () => {
         <label class="block text-xs font-semibold text-slate-700">Lời giải chi tiết bài tự luận:</label>
         <textarea
           :value="answers[currentExercise.id] || ''"
-          @input="e => { answers[currentExercise.id] = e.target.value; localStorage.setItem(`bienedu_exam_${assignmentId}`, JSON.stringify(answers)); }"
+          @input="e => setTextAnswer(e.target.value)"
           rows="5"
           placeholder="Trình bày các bước giải toán, lập luận và kết luận tại đây..."
           class="w-full p-3.5 text-xs font-sans border border-slate-300 rounded-xl focus:ring-2 focus:ring-ocean-500 outline-none leading-relaxed"
@@ -261,6 +239,10 @@ const handleSubmit = async () => {
           <ArrowRight class="w-3.5 h-3.5" />
         </button>
       </div>
+    </div>
+
+    <div v-else-if="!isLoading" data-testid="assignment-empty" class="bg-white rounded-3xl border border-slate-200/90 p-10 text-center text-xs text-slate-500">
+      Bài tập này chưa có câu hỏi hoặc không thể tải. Vui lòng quay lại danh sách bài tập.
     </div>
 
     <!-- Confirm Submit Modal -->

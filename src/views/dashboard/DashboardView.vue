@@ -6,6 +6,7 @@ import { mistakeService } from '@/services/mistakeService'
 import { analyticsService } from '@/services/analyticsService'
 import { assignmentService } from '@/services/assignmentService'
 import MathRenderer from '@/components/MathRenderer.vue'
+import { gradeLabel } from '@/constants/grades'
 import { 
   Users, 
   FileText, 
@@ -98,7 +99,7 @@ onMounted(async () => {
       <div class="space-y-2">
         <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white/15 text-xs font-semibold backdrop-blur-sm text-ocean-100">
           <Sparkles class="w-3.5 h-3.5 text-amber-300" />
-          <span>{{ authStore.isTeacher ? 'Bảng Điều Khiển Giảng Dạy' : 'Không Gian Học Tập Toán BienEDU' }}</span>
+          <span data-testid="dashboard-badge">{{ authStore.isTeacher ? 'Bảng Điều Khiển Giảng Dạy' : (authStore.gradeLevel ? `Không Gian Học Tập Toán ${gradeLabel(authStore.gradeLevel)}` : 'Không Gian Học Tập Toán BienEDU') }}</span>
         </div>
         <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">
           Chào bạn, {{ authStore.user?.fullName || 'Thành viên' }}! 👋

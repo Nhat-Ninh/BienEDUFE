@@ -171,7 +171,7 @@ const handlePlanClick = (plan) => {
 
     <!-- Footer -->
     <footer class="border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-400">
-      BienEDU © 2025. Nền tảng học tập Toán THPT thông minh.
+      BienEDU © 2025. Nền tảng học tập Toán THCS & THPT thông minh.
     </footer>
   </div>
 </template>

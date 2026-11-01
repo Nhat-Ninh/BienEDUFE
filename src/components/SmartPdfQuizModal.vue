@@ -1,8 +1,9 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { extractTextFromPdf, parseExamQuestions } from '@/utils/mathExamParser'
 import { lessonService } from '@/services/lessonService'
 import MathRenderer from '@/components/MathRenderer.vue'
+import { gradeLabel, normalizeGrade } from '@/constants/grades'
 import { 
   X, 
   Sparkles, 
@@ -43,9 +44,99 @@ const quizDescription = ref('Bài kiểm tra trắc nghiệm đánh giá mức �
 const durationMinutes = ref(15)
 const dueAt = ref('')
 
-// Đề thi mẫu Toán 12 để trải nghiệm 1 chạm
-const loadSampleExam = () => {
-  rawText.value = `Câu 1: Cho hàm số $y = x^3 - 3x^2 + 2$. Điểm cực đại của đồ thị hàm số là:
+// Đề thi mẫu theo đúng khối của bài học để trải nghiệm 1 chạm (không dùng chung đề lớp 12)
+const SAMPLE_EXAMS = {
+  6: String.raw`Câu 1: Giá trị của biểu thức $A = 2^3 \cdot 5 - 3^2 + 10$ là:
+A. $41$
+B. $31$
+C. $39$
+D. $21$
+Lời giải: Lũy thừa trước: $2^3 = 8$, $3^2 = 9$. Nhân: $8 \cdot 5 = 40$. Vậy $A = 40 - 9 + 10 = 41$.
+Đáp án: A
+
+Câu 2: Kết quả của phép tính $(-25) + 14 - (-11)$ bằng:
+A. $0$
+B. $-22$
+C. $-50$
+D. $25$
+Lời giải: $(-25) + 14 + 11 = -25 + 25 = 0$.
+Đáp án: A`,
+  7: String.raw`Câu 1: Giá trị của biểu thức $A = \left(-\frac{1}{2}\right)^3 \cdot 16$ là:
+A. $-2$
+B. $2$
+C. $-8$
+D. $8$
+Lời giải: $\left(-\frac{1}{2}\right)^3 = -\frac{1}{8}$ nên $A = -\frac{1}{8} \cdot 16 = -2$.
+Đáp án: A
+
+Câu 2: Tìm $x$ biết $x + \frac{1}{2} = \frac{3}{4}$:
+A. $\frac{1}{4}$
+B. $\frac{5}{4}$
+C. $-\frac{1}{4}$
+D. $\frac{1}{2}$
+Lời giải: $x = \frac{3}{4} - \frac{1}{2} = \frac{1}{4}$.
+Đáp án: A`,
+  8: String.raw`Câu 1: Rút gọn biểu thức $B = (x + 2)^2 - (x - 2)^2$ ta được:
+A. $8x$
+B. $4x$
+C. $8$
+D. $2x^2 + 8$
+Lời giải: Dùng $A^2 - B^2 = (A - B)(A + B)$: $B = 4 \cdot 2x = 8x$.
+Đáp án: A
+
+Câu 2: Phân tích đa thức $x^2 - 6x + 9$ thành nhân tử ta được:
+A. $(x - 3)^2$
+B. $(x + 3)^2$
+C. $(x - 3)(x + 3)$
+D. $(x - 9)(x + 1)$
+Lời giải: $x^2 - 2 \cdot x \cdot 3 + 3^2 = (x - 3)^2$.
+Đáp án: A`,
+  9: String.raw`Câu 1: Rút gọn $P = \sqrt{(3 - \sqrt{10})^2} + \sqrt{10}$ ta được:
+A. $3$
+B. $2\sqrt{10} - 3$
+C. $3 - 2\sqrt{10}$
+D. $-3$
+Lời giải: $\sqrt{(3 - \sqrt{10})^2} = \sqrt{10} - 3$ vì $3 < \sqrt{10}$. Vậy $P = 2\sqrt{10} - 3$.
+Đáp án: B
+
+Câu 2: Phương trình $x^2 - 5x + 6 = 0$ có tổng hai nghiệm bằng:
+A. $5$
+B. $-5$
+C. $6$
+D. $-6$
+Lời giải: Theo Vi-ét, $x_1 + x_2 = -\frac{b}{a} = 5$.
+Đáp án: A`,
+  10: String.raw`Câu 1: Tập nghiệm của bất phương trình $x^2 - 4x + 3 < 0$ là:
+A. $(1; 3)$
+B. $(-\infty; 1) \cup (3; +\infty)$
+C. $[1; 3]$
+D. $(-\infty; -3) \cup (-1; +\infty)$
+Lời giải: Tam thức có hai nghiệm $1$ và $3$, $a = 1 > 0$ nên âm trong khoảng hai nghiệm: $(1; 3)$.
+Đáp án: A
+
+Câu 2: Cho hai vectơ $\vec{a} = (1; 2)$ và $\vec{b} = (3; -1)$. Tích vô hướng $\vec{a} \cdot \vec{b}$ bằng:
+A. $1$
+B. $5$
+C. $-1$
+D. $0$
+Lời giải: $\vec{a} \cdot \vec{b} = 1 \cdot 3 + 2 \cdot (-1) = 1$.
+Đáp án: A`,
+  11: String.raw`Câu 1: Giới hạn $\lim \frac{3n^2 + 2n - 1}{n^2 + 5}$ bằng:
+A. $3$
+B. $2$
+C. $0$
+D. $+\infty$
+Lời giải: Chia cả tử và mẫu cho $n^2$ ta được giới hạn $3$.
+Đáp án: A
+
+Câu 2: Đạo hàm của hàm số $y = x^3 - 2x$ tại $x = 1$ bằng:
+A. $1$
+B. $3$
+C. $-1$
+D. $2$
+Lời giải: $y' = 3x^2 - 2$ nên $y'(1) = 1$.
+Đáp án: A`,
+  12: String.raw`Câu 1: Cho hàm số $y = x^3 - 3x^2 + 2$. Điểm cực đại của đồ thị hàm số là:
 A. $(0; 2)$
 B. $(2; -2)$
 C. $(1; 0)$
@@ -76,6 +167,13 @@ C. $2a^3$
 D. $9a^3$
 Lời giải: Công thức thể tích khối chóp là $V = \frac{1}{3} B \cdot h = \frac{1}{3} \cdot 6a^2 \cdot 3a = 6a^3$.
 Đáp án: A`
+}
+
+const lessonGrade = computed(() => normalizeGrade(props.lesson?.gradeLevel))
+const sampleExam = computed(() => (lessonGrade.value ? SAMPLE_EXAMS[lessonGrade.value] : null))
+
+const loadSampleExam = () => {
+  if (sampleExam.value) rawText.value = sampleExam.value
 }
 
 // Xử lý khi người dùng chọn file PDF
@@ -168,7 +266,7 @@ const handlePublishQuiz = async () => {
       emit('close')
     }, 1200)
   } catch (err) {
-    errorMessage.value = err.response?.data?.message || err.message || 'Lỗi khi tạo bài kiểm tra.'
+    errorMessage.value = err.detail || err.message || 'Lỗi khi tạo bài kiểm tra.'
   } finally {
     isSubmitting.value = false
   }
@@ -222,10 +320,12 @@ const handlePublishQuiz = async () => {
               </p>
             </div>
             <button
+              v-if="sampleExam"
+              data-testid="load-sample-exam"
               @click="loadSampleExam"
               class="px-3.5 py-1.5 bg-white border border-ocean-200 hover:bg-ocean-100 text-ocean-700 font-bold text-xs rounded-xl shadow-xs transition flex-shrink-0"
             >
-              📄 Dùng Đề Mẫu Toán 12
+              📄 Dùng Đề Mẫu Toán {{ gradeLabel(lessonGrade).replace('Lớp ', '') }}
             </button>
           </div>
 

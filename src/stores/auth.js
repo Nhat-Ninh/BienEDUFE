@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authService } from '@/services/authService'
 import { subscriptionService } from '@/services/subscriptionService'
+import { normalizeGrade } from '@/constants/grades'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('bienedu_access_token') || null)
@@ -15,6 +16,10 @@ export const useAuthStore = defineStore('auth', () => {
   const isTeacher = computed(() => user.value?.role === 'TEACHER')
   const isStudent = computed(() => user.value?.role === 'STUDENT')
   const isAdmin = computed(() => user.value?.role === 'ADMIN')
+
+  // Khối lớp học sinh đã đăng ký (6–12). null = giáo viên hoặc tài khoản cũ chưa chọn khối.
+  const gradeLevel = computed(() => (user.value?.role === 'STUDENT' ? normalizeGrade(user.value?.gradeLevel) : null))
+  const needsGradeSelection = computed(() => isStudent.value && gradeLevel.value === null)
 
   const hasActivePlan = computed(() => {
     return !!(subscription.value && (subscription.value.isVip || subscription.value.status === 'ACTIVE' || subscription.value.daysRemaining > 0))
@@ -94,6 +99,30 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** Đồng bộ lại hồ sơ (khối lớp, vai trò...) từ máy chủ; lỗi mạng thì giữ nguyên dữ liệu đang có. */
+  async function refreshUser() {
+    if (!token.value) return null
+    try {
+      const res = await authService.getMe()
+      const userData = res.data || res
+      if (userData?.id) {
+        user.value = userData
+        localStorage.setItem('bienedu_user', JSON.stringify(userData))
+      }
+      return user.value
+    } catch (e) {
+      return user.value
+    }
+  }
+
+  async function setGradeLevel(grade) {
+    const res = await authService.updateGradeLevel(grade)
+    const userData = res.data || res
+    user.value = { ...user.value, ...userData }
+    localStorage.setItem('bienedu_user', JSON.stringify(user.value))
+    return user.value
+  }
+
   async function logout() {
     try {
       if (token.value) {
@@ -121,12 +150,16 @@ export const useAuthStore = defineStore('auth', () => {
     isTeacher,
     isStudent,
     isAdmin,
+    gradeLevel,
+    needsGradeSelection,
     hasActivePlan,
     activePlanName,
     daysRemaining,
     fetchSubscription,
     login,
     fetchCurrentUser,
+    refreshUser,
+    setGradeLevel,
     logout
   }
 })

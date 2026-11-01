@@ -18,6 +18,7 @@ test.describe('2. Authentication & Authorization Flows', () => {
     await page.fill('input[type="text"]', 'Nguyễn Minh Quân')
     await page.fill('input[type="tel"]', studentPhone)
     await page.fill('input[type="email"]', studentEmail)
+    await page.selectOption('[data-testid="register-grade"]', '10')
     await page.fill('input[type="password"]', '123456') // Chỉ 6 ký tự
     
     await page.click('button[type="submit"]')
@@ -34,6 +35,7 @@ test.describe('2. Authentication & Authorization Flows', () => {
     await page.fill('input[type="text"]', 'Nguyễn Minh Quân')
     await page.fill('input[type="tel"]', studentPhone)
     await page.fill('input[type="email"]', studentEmail)
+    await page.selectOption('[data-testid="register-grade"]', '10')
     await page.fill('input[type="password"]', passwordValid)
 
     await page.click('button[type="submit"]')
@@ -48,6 +50,7 @@ test.describe('2. Authentication & Authorization Flows', () => {
 
     await page.fill('input[type="text"]', 'Người Trùng Số')
     await page.fill('input[type="tel"]', studentPhone) // Đã đăng ký ở test trên
+    await page.selectOption('[data-testid="register-grade"]', '10')
     await page.fill('input[type="password"]', passwordValid)
 
     await page.click('button[type="submit"]')

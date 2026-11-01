@@ -2,39 +2,35 @@
 import { ref, onMounted } from 'vue'
 import { exerciseService } from '@/services/exerciseService'
 import { catalogService } from '@/services/catalogService'
+import { GRADES, GRADE_INFO } from '@/constants/grades'
 import MathRenderer from '@/components/MathRenderer.vue'
 import { Database, Plus, Sparkles, CheckCircle2, AlertCircle, FileText, Upload, GraduationCap } from 'lucide-vue-next'
 
 const activeTab = ref('batch') // 'batch' | 'create'
-const targetGrade = ref(12)
-const targetLessonUnitId = ref(120001)
+const targetGrade = ref('') // giáo viên chọn khối; không mặc định lớp 12
+const targetLessonUnitId = ref('')
+const unitOptions = ref([])
+const isLoadingUnits = ref(false)
 
-const gradeList = [
-  { grade: 6, label: 'Lớp 6 (THCS)', defaultUnit: 60001 },
-  { grade: 7, label: 'Lớp 7 (THCS)', defaultUnit: 60001 },
-  { grade: 8, label: 'Lớp 8 (THCS)', defaultUnit: 60001 },
-  { grade: 9, label: 'Lớp 9 (Vào 10)', defaultUnit: 90001 },
-  { grade: 10, label: 'Lớp 10 (CT 2018)', defaultUnit: 100001 },
-  { grade: 11, label: 'Lớp 11 (THPT)', defaultUnit: 100001 },
-  { grade: 12, label: 'Lớp 12 (THPTQG)', defaultUnit: 120001 }
-]
+const gradeList = GRADES.map(g => ({ grade: g, label: `${GRADE_INFO[g].label} (${GRADE_INFO[g].sub})` }))
 
-const onGradeChange = () => {
-  const g = gradeList.find(x => x.grade === targetGrade.value)
-  if (g) targetLessonUnitId.value = g.defaultUnit
+// Chọn khối -> nạp dạng bài đúng khối đó từ danh mục (không dùng ID cố định của lớp khác)
+const onGradeChange = async () => {
+  targetLessonUnitId.value = ''
+  unitOptions.value = []
+  if (!targetGrade.value) return
+  isLoadingUnits.value = true
+  try {
+    unitOptions.value = await catalogService.getLessonUnitOptionsByGrade(targetGrade.value)
+    if (unitOptions.value.length > 0) targetLessonUnitId.value = unitOptions.value[0].id
+  } catch (e) {
+    unitOptions.value = []
+  } finally {
+    isLoadingUnits.value = false
+  }
 }
 
-const rawExamText = ref(`Câu 1. Cho hàm số y = f(x) có đạo hàm f'(x) = x(x - 1)^2. Số điểm cực trị của hàm số đã cho là
-A. 0.
-B. 1.
-C. 2.
-D. 3.
-
-Câu 2. Cho hàm số y = ax^3 + bx^2 + cx + d có đồ thị như hình vẽ. Mệnh đề nào dưới đây đúng?
-A. a > 0, d > 0.
-B. a < 0, d > 0.
-C. a > 0, d < 0.
-D. a < 0, d < 0.`)
+const rawExamText = ref('')
 
 const parsedQuestions = ref([])
 const isParsing = ref(false)
@@ -42,20 +38,23 @@ const isSaving = ref(false)
 const statusMessage = ref('')
 
 // Single create state
-const singleLessonUnitId = ref(120001)
 const singleType = ref('MULTIPLE_CHOICE')
 const singleDifficulty = ref('MEDIUM')
-const singleContent = ref('Cho hàm số $y = x^3 - 3x$. Tính khoảng đồng biến của hàm số.')
+const singleContent = ref('')
 const singleChoices = ref([
-  { key: 'A', text: '$(-\\infty; -1)$ và $(1; +\\infty)$' },
-  { key: 'B', text: '$(-1; 1)$' },
-  { key: 'C', text: '$(-\\infty; 1)$' },
-  { key: 'D', text: '$(1; +\\infty)$' }
+  { key: 'A', text: '' },
+  { key: 'B', text: '' },
+  { key: 'C', text: '' },
+  { key: 'D', text: '' }
 ])
 const singleCorrectAnswer = ref('A')
 
 const handleParseRaw = async () => {
   if (!rawExamText.value) return
+  if (!targetLessonUnitId.value) {
+    statusMessage.value = 'Vui lòng chọn khối lớp và dạng bài trước khi phân tích.'
+    return
+  }
   isParsing.value = true
   statusMessage.value = ''
   try {
@@ -97,6 +96,10 @@ const handleBatchSave = async () => {
 }
 
 const handleCreateSingle = async () => {
+  if (!targetLessonUnitId.value) {
+    alert('Vui lòng chọn khối lớp và dạng bài trước khi lưu câu hỏi.')
+    return
+  }
   try {
     await exerciseService.createExercise({
       lessonUnitId: targetLessonUnitId.value,
@@ -148,6 +151,38 @@ const handleCreateSingle = async () => {
       </div>
     </div>
 
+    <!-- Khối lớp & dạng bài đích: dùng chung cho cả hai chế độ soạn -->
+    <div class="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-sm">
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Khối Lớp</label>
+          <select
+            v-model="targetGrade"
+            data-testid="bank-grade"
+            @change="onGradeChange"
+            class="w-full p-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-ocean-500 font-medium"
+          >
+            <option value="" disabled>Chọn khối lớp</option>
+            <option v-for="g in gradeList" :key="g.grade" :value="g.grade">
+              {{ g.label }}
+            </option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Dạng Bài</label>
+          <select
+            v-model="targetLessonUnitId"
+            data-testid="bank-unit"
+            :disabled="isLoadingUnits || unitOptions.length === 0"
+            class="w-full p-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-ocean-500 font-medium"
+          >
+            <option value="" disabled>{{ targetGrade ? (isLoadingUnits ? 'Đang tải...' : 'Khối này chưa có dạng bài') : 'Chọn khối lớp trước' }}</option>
+            <option v-for="u in unitOptions" :key="u.id" :value="u.id">{{ u.name }}</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
     <!-- Mode 1: Batch Parse Raw Text -->
     <div v-if="activeTab === 'batch'" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
       <!-- Left: Raw Input -->
@@ -155,30 +190,6 @@ const handleCreateSingle = async () => {
         <div class="flex items-center justify-between pb-3 border-b border-slate-100">
           <h3 class="text-sm font-bold text-slate-900">Dán đề thi dạng văn bản</h3>
           <span class="text-[11px] text-slate-400">Hỗ trợ copy từ Word / PDF</span>
-        </div>
-
-        <!-- Grade Selector -->
-        <div class="grid grid-cols-2 gap-2 text-xs">
-          <div>
-            <label class="block font-semibold text-slate-700 mb-1">Khối Lớp</label>
-            <select
-              v-model="targetGrade"
-              @change="onGradeChange"
-              class="w-full p-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-ocean-500 font-medium"
-            >
-              <option v-for="g in gradeList" :key="g.grade" :value="g.grade">
-                {{ g.label }}
-              </option>
-            </select>
-          </div>
-          <div>
-            <label class="block font-semibold text-slate-700 mb-1">Mã Dạng Bài (LU)</label>
-            <input
-              v-model="targetLessonUnitId"
-              type="number"
-              class="w-full p-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-ocean-500 font-mono"
-            />
-          </div>
         </div>
 
         <textarea

@@ -32,6 +32,7 @@ test.describe('8. Full Student End-to-End Journey (Học Sinh Toàn Diện)', ()
     
     // Chọn role Học Sinh
     await page.click('button:has-text("Học Sinh / Luyện Thi")')
+    await page.selectOption('[data-testid="register-grade"]', '12')
     await page.click('button[type="submit"]')
 
     // Đăng ký thành công và tự động chuyển đến Dashboard

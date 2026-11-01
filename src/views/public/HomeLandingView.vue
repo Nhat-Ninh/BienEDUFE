@@ -2,6 +2,8 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import MathRenderer from '@/components/MathRenderer.vue'
+import { useAuthStore } from '@/stores/auth'
+import { GRADES, GRADE_INFO } from '@/constants/grades'
 import { 
   ArrowRight, 
   CheckCircle2, 
@@ -20,9 +22,11 @@ import {
 } from 'lucide-vue-next'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 // Interactive Math Specimen state
-const selectedGradeTab = ref(12)
+// Học sinh đã đăng nhập thấy ngay khối lớp của mình; khách mặc định xem khối 12 và tự chọn khối khác
+const selectedGradeTab = ref(authStore.gradeLevel || 12)
 const interactiveAnswer = ref(null)
 const isAnswerChecked = ref(false)
 
@@ -42,6 +46,34 @@ const specimenQuestions = {
 2. Phép nhân: $8 \\cdot 5 = 40$.
 3. Phép cộng và trừ theo thứ tự từ trái qua phải:
 $$A = 40 - 9 + 10 = 31 + 10 = 41.$$
+Vậy đáp án đúng là **A**.`
+  },
+  7: {
+    title: 'Toán Lớp 7 • Lũy Thừa Của Số Hữu Tỉ',
+    content: `Giá trị của biểu thức $A = \\left(-\\frac{1}{2}\\right)^3 \\cdot 16$ là:`,
+    choices: [
+      { key: 'A', text: '$-2$' },
+      { key: 'B', text: '$2$' },
+      { key: 'C', text: '$-8$' },
+      { key: 'D', text: '$8$' }
+    ],
+    correct: 'A',
+    solution: `Lũy thừa bậc lẻ của số âm là số âm:
+$$\\left(-\\frac{1}{2}\\right)^3 = -\\frac{1}{8}.$$
+Do đó $A = -\\frac{1}{8} \\cdot 16 = -2$. Vậy đáp án đúng là **A**.`
+  },
+  8: {
+    title: 'Toán Lớp 8 • Hằng Đẳng Thức Đáng Nhớ',
+    content: `Rút gọn biểu thức $B = (x + 2)^2 - (x - 2)^2$ ta được:`,
+    choices: [
+      { key: 'A', text: '$8x$' },
+      { key: 'B', text: '$4x$' },
+      { key: 'C', text: '$8$' },
+      { key: 'D', text: '$2x^2 + 8$' }
+    ],
+    correct: 'A',
+    solution: `Áp dụng $A^2 - B^2 = (A - B)(A + B)$ với $A = x + 2$, $B = x - 2$:
+$$B = [(x + 2) - (x - 2)] \\cdot [(x + 2) + (x - 2)] = 4 \\cdot 2x = 8x.$$
 Vậy đáp án đúng là **A**.`
   },
   9: {
@@ -76,6 +108,20 @@ Nghiệm của $f(x) = 0$ là $x = 1$ hoặc $x = 3$.
 $f(x) < 0$ khi và chỉ khi $x$ nằm trong khoảng hai nghiệm: $1 < x < 3$.
 Vậy tập nghiệm là $S = (1; 3)$. Đáp án đúng là **A**.`
   },
+  11: {
+    title: 'Toán Lớp 11 • Giới Hạn Của Dãy Số',
+    content: `Giới hạn $\\lim \\dfrac{3n^2 + 2n - 1}{n^2 + 5}$ bằng:`,
+    choices: [
+      { key: 'A', text: '$3$' },
+      { key: 'B', text: '$2$' },
+      { key: 'C', text: '$0$' },
+      { key: 'D', text: '$+\\infty$' }
+    ],
+    correct: 'A',
+    solution: `Chia cả tử và mẫu cho $n^2$:
+$$\\lim \\dfrac{3 + \\frac{2}{n} - \\frac{1}{n^2}}{1 + \\frac{5}{n^2}} = \\dfrac{3 + 0 - 0}{1 + 0} = 3.$$
+Vậy đáp án đúng là **A**.`
+  },
   12: {
     title: 'Toán Lớp 12 • Cực Trị Chứa Tham Số m (Luyện Thi THPTQG)',
     content: `Tìm tất cả các giá trị thực của tham số $m$ để hàm số $y = \\frac{1}{3}x^3 - mx^2 + (m^2 - m + 1)x + 1$ đạt cực đại tại điểm $x = 1$.`,
@@ -93,6 +139,9 @@ Phương trình $m^2 - 3m + 2 = 0$ có nghiệm $m = 1$ hoặc $m = 2$.
 Kết hợp điều kiện $m > 1$, ta nhận **$m = 2$**.`
   }
 }
+
+const topicGrade = computed(() => GRADE_INFO[selectedGradeTab.value] || GRADE_INFO[12])
+const gradeTabLabel = (g) => (g === 9 ? 'Lớp 9 (Vào 10)' : g === 12 ? 'Lớp 12 (THPTQG)' : `Lớp ${g}`)
 
 const currentSample = computed(() => {
   return specimenQuestions[selectedGradeTab.value] || specimenQuestions[12]
@@ -124,7 +173,7 @@ const resetSample = () => {
         <router-link to="/" class="flex items-center space-x-3 group">
           <img src="/logo.png" alt="BienEDU Logo" class="h-12 w-auto object-contain transition-transform group-hover:scale-105" />
           <div class="hidden sm:block">
-            <span class="text-xs uppercase tracking-widest font-semibold text-ocean-600 block">Nền tảng Toán 12</span>
+            <span class="text-xs uppercase tracking-widest font-semibold text-ocean-600 block">Nền tảng Toán 6 - 12</span>
             <span class="text-sm font-bold text-slate-800 tracking-tight">Học Có Lộ Trình</span>
           </div>
         </router-link>
@@ -137,13 +186,23 @@ const resetSample = () => {
         </nav>
 
         <div class="flex items-center space-x-3">
-          <router-link 
-            to="/auth/login" 
+          <router-link
+            v-if="authStore.isAuthenticated"
+            to="/app/dashboard"
+            data-testid="landing-open-app"
+            class="px-5 py-2.5 text-sm font-semibold text-white bg-ocean-600 hover:bg-ocean-700 rounded-xl shadow-md shadow-ocean-500/20 transition-all"
+          >
+            Vào Ứng Dụng
+          </router-link>
+          <router-link
+            v-if="!authStore.isAuthenticated"
+            to="/auth/login"
             class="px-4 py-2 text-sm font-semibold text-slate-700 hover:text-ocean-600 hover:bg-slate-50 rounded-xl transition"
           >
             Đăng nhập
           </router-link>
-          <router-link 
+          <router-link
+            v-if="!authStore.isAuthenticated"
             to="/auth/register" 
             class="px-5 py-2.5 text-sm font-semibold text-white bg-ocean-600 hover:bg-ocean-700 rounded-xl shadow-md shadow-ocean-500/20 hover:shadow-ocean-500/30 transition-all transform hover:-translate-y-0.5"
           >
@@ -237,7 +296,7 @@ const resetSample = () => {
                 <!-- Specimen Grade Switcher -->
                 <div class="pt-3 pb-1 flex items-center space-x-1.5 overflow-x-auto">
                   <button
-                    v-for="g in [6, 9, 10, 12]"
+                    v-for="g in GRADES"
                     :key="g"
                     @click="changeSpecimenGrade(g)"
                     :class="[
@@ -247,7 +306,7 @@ const resetSample = () => {
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     ]"
                   >
-                    {{ g === 9 ? 'Lớp 9 (Vào 10)' : g === 12 ? 'Lớp 12 (THPTQG)' : `Lớp ${g}` }}
+                    {{ gradeTabLabel(g) }}
                   </button>
                 </div>
 
@@ -391,7 +450,7 @@ const resetSample = () => {
           <div class="flex flex-col md:flex-row md:items-end justify-between mb-12">
             <div>
               <span class="text-xs uppercase font-bold text-ocean-600 tracking-widest block mb-2">Chương trình chuẩn</span>
-              <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight">Trọng tâm Toán 12 & Luyện thi THPTQG</h2>
+              <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight" data-testid="landing-topics-title">Trọng tâm Toán {{ selectedGradeTab }}{{ selectedGradeTab === 12 ? ' & Luyện thi THPTQG' : selectedGradeTab === 9 ? ' & Ôn thi vào 10' : '' }}</h2>
             </div>
             <router-link to="/auth/register" class="mt-4 md:mt-0 text-sm font-semibold text-ocean-600 hover:text-ocean-700 flex items-center space-x-1">
               <span>Xem ngân hàng bài tập</span>
@@ -399,70 +458,46 @@ const resetSample = () => {
             </router-link>
           </div>
 
+          <!-- Chọn khối để xem chuyên đề trọng tâm đúng khối -->
+          <div class="flex items-center gap-1.5 overflow-x-auto pb-4" data-testid="landing-topic-tabs">
+            <button
+              v-for="g in GRADES"
+              :key="g"
+              :data-testid="`landing-topic-grade-${g}`"
+              @click="changeSpecimenGrade(g)"
+              :class="[
+                'px-3.5 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer',
+                selectedGradeTab === g ? 'bg-ocean-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+              ]"
+            >
+              {{ gradeTabLabel(g) }}
+            </button>
+          </div>
+
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div class="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition">
+            <div
+              v-for="(t, idx) in topicGrade.topics"
+              :key="`${selectedGradeTab}-${idx}`"
+              class="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition"
+            >
               <div class="flex items-center justify-between mb-3">
-                <span class="text-xs font-bold text-ocean-700 bg-ocean-50 px-2.5 py-1 rounded-md">Chuyên đề 1</span>
-                <span class="text-xs text-slate-400">12 bài giảng • 350 bài tập</span>
+                <span class="text-xs font-bold text-ocean-700 bg-ocean-50 px-2.5 py-1 rounded-md">Chuyên đề {{ idx + 1 }}</span>
+                <span class="text-xs text-slate-400">{{ topicGrade.label }}</span>
               </div>
-              <h4 class="font-bold text-slate-900 text-base mb-1">Ứng dụng Đạo hàm & Khảo sát Hàm số</h4>
-              <p class="text-xs text-slate-500 leading-relaxed">
-                Đơn điệu, cực trị, giá trị lớn nhất - nhỏ nhất, tiệm cận, bảng biến thiên và bài toán tương giao đồ thị chứa tham số $m$.
-              </p>
-            </div>
-
-            <div class="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition">
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-xs font-bold text-ocean-700 bg-ocean-50 px-2.5 py-1 rounded-md">Chuyên đề 2</span>
-                <span class="text-xs text-slate-400">10 bài giảng • 280 bài tập</span>
+              <h4 class="font-bold text-slate-900 text-base mb-1">{{ t.title }}</h4>
+              <div class="text-xs text-slate-500 leading-relaxed">
+                <MathRenderer :content="t.desc" />
               </div>
-              <h4 class="font-bold text-slate-900 text-base mb-1">Hàm số Lũy thừa, Mũ & Logarit</h4>
-              <p class="text-xs text-slate-500 leading-relaxed">
-                Biến đổi công thức mũ - logarit, phương trình - bất phương trình và bài toán tối ưu thực tế, lãi suất ngân hàng.
-              </p>
-            </div>
-
-            <div class="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition">
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-xs font-bold text-ocean-700 bg-ocean-50 px-2.5 py-1 rounded-md">Chuyên đề 3</span>
-                <span class="text-xs text-slate-400">14 bài giảng • 420 bài tập</span>
-              </div>
-              <h4 class="font-bold text-slate-900 text-base mb-1">Nguyên hàm, Tích phân & Ứng dụng</h4>
-              <p class="text-xs text-slate-500 leading-relaxed">
-                Phương pháp đổi biến, từng phần, tính diện tích hình phẳng, thể tích khối tròn xoay và bài toán chuyển động vật lý.
-              </p>
-            </div>
-
-            <div class="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition">
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-xs font-bold text-ocean-700 bg-ocean-50 px-2.5 py-1 rounded-md">Chuyên đề 4</span>
-                <span class="text-xs text-slate-400">12 bài giảng • 360 bài tập</span>
-              </div>
-              <h4 class="font-bold text-slate-900 text-base mb-1">Hình học Không gian Oxyz</h4>
-              <p class="text-xs text-slate-500 leading-relaxed">
-                Hệ tọa độ Oxyz, phương trình mặt phẳng, đường thẳng, mặt cầu, góc và khoảng cách, bài toán cực trị hình học không gian.
-              </p>
-            </div>
-
-            <div class="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition">
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-xs font-bold text-ocean-700 bg-ocean-50 px-2.5 py-1 rounded-md">Chuyên đề 5</span>
-                <span class="text-xs text-slate-400">8 bài giảng • 200 bài tập</span>
-              </div>
-              <h4 class="font-bold text-slate-900 text-base mb-1">Xác suất & Thống kê Mô tả</h4>
-              <p class="text-xs text-slate-500 leading-relaxed">
-                Quy tắc cộng - nhân, tổ hợp, chỉnh hợp, xác suất có điều kiện, công thức xác suất toàn phần và các bài toán mẫu thực tiễn.
-              </p>
             </div>
 
             <div class="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition">
               <div class="flex items-center justify-between mb-3">
                 <span class="text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md">Luyện đề</span>
-                <span class="text-xs text-slate-400">40 đề chuẩn cấu trúc</span>
+                <span class="text-xs text-slate-400">{{ topicGrade.label }}</span>
               </div>
               <h4 class="font-bold text-slate-900 text-base mb-1">Luyện Đề Bấm Giờ Thi Thật</h4>
               <p class="text-xs text-slate-500 leading-relaxed">
-                Đề thi 50 câu 90 phút bấm giờ tự động, chấm điểm tức thì, thống kê phân tích ma trận điểm mạnh điểm yếu.
+                Đề kiểm tra bấm giờ tự động, chấm điểm tức thì, thống kê phân tích ma trận điểm mạnh điểm yếu theo từng chuyên đề.
               </p>
             </div>
           </div>
@@ -523,8 +558,8 @@ const resetSample = () => {
                 Được Chọn Nhiều Nhất
               </div>
               <div>
-                <h3 class="text-lg font-bold text-white">Chuyên Sâu Toán 12</h3>
-                <p class="text-xs text-ocean-100 mt-1">Bứt phá mục tiêu 8.0 - 9.0 điểm THPTQG</p>
+                <h3 class="text-lg font-bold text-white">Chuyên Sâu Toán {{ selectedGradeTab }}</h3>
+                <p class="text-xs text-ocean-100 mt-1">{{ topicGrade.goal }}</p>
                 <div class="mt-6 mb-6">
                   <span class="text-4xl font-extrabold text-white">650.000đ</span>
                   <span class="text-xs text-ocean-200 font-medium"> / Toàn bộ khóa học</span>
@@ -532,7 +567,7 @@ const resetSample = () => {
                 <ul class="space-y-3 text-sm text-ocean-50">
                   <li class="flex items-center space-x-2.5">
                     <CheckCircle2 class="w-4 h-4 text-ocean-200 flex-shrink-0" />
-                    <span>Toàn bộ 6 chuyên đề Toán 12 đầy đủ</span>
+                    <span>Toàn bộ chuyên đề Toán {{ selectedGradeTab }} đầy đủ</span>
                   </li>
                   <li class="flex items-center space-x-2.5">
                     <CheckCircle2 class="w-4 h-4 text-ocean-200 flex-shrink-0" />
@@ -602,7 +637,7 @@ const resetSample = () => {
       <section class="py-16 bg-gradient-to-r from-ocean-700 via-ocean-600 to-indigo-700 text-white">
         <div class="max-w-5xl mx-auto px-4 sm:px-6 text-center space-y-6">
           <h2 class="text-3xl sm:text-4xl font-extrabold tracking-tight">
-            Sẵn sàng bắt đầu hành trình bứt phá điểm Toán 12?
+            Sẵn sàng bắt đầu hành trình bứt phá điểm Toán {{ selectedGradeTab }}?
           </h2>
           <p class="text-ocean-100 max-w-xl mx-auto text-base">
             Gia nhập cùng hàng trăm học sinh đang theo học lộ trình BienEDU để việc học Toán trở nên nhẹ nhàng, chắc chắn và hiệu quả.
@@ -635,10 +670,9 @@ const resetSample = () => {
         <div>
           <h5 class="text-white font-semibold text-sm mb-3">Chương Trình Học</h5>
           <ul class="space-y-2 text-xs">
-            <li><a href="#topics" class="hover:text-white transition">Hàm số & Đạo hàm</a></li>
-            <li><a href="#topics" class="hover:text-white transition">Nguyên hàm & Tích phân</a></li>
-            <li><a href="#topics" class="hover:text-white transition">Hình học Oxyz</a></li>
-            <li><a href="#topics" class="hover:text-white transition">Đề thi thử THPT Quốc Gia</a></li>
+            <li v-for="(t, idx) in topicGrade.topics.slice(0, 4)" :key="idx">
+              <a href="#topics" class="hover:text-white transition">{{ t.title }}</a>
+            </li>
           </ul>
         </div>
 

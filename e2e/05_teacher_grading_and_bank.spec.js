@@ -18,8 +18,20 @@ test.describe('5. Teacher Exercise Bank & Essay Grading', () => {
     await page.goto('/app/teacher/exercises')
     await expect(page.locator('h1')).toContainText('Ngân Hàng Câu Hỏi & Đề Thi')
 
-    // 1. Chọn Khối Lớp 9
-    await page.selectOption('select', '9')
+    // 1. Chọn Khối Lớp 9 rồi chọn dạng bài của khối đó
+    await page.selectOption('[data-testid="bank-grade"]', '9')
+    await expect(page.locator('[data-testid="bank-unit"] option').nth(1)).toBeAttached({ timeout: 8000 })
+    await page.fill('textarea[placeholder*="Dán nội dung đề thi vào đây"]', String.raw`Câu 1. Rút gọn biểu thức $P = \\sqrt{(3 - \\sqrt{10})^2} + \\sqrt{10}$ ta được
+A. 3.
+B. 2\\sqrt{10} - 3.
+C. 3 - 2\\sqrt{10}.
+D. -3.
+
+Câu 2. Phương trình x^2 - 5x + 6 = 0 có tổng hai nghiệm bằng
+A. 5.
+B. -5.
+C. 6.
+D. -6.`)
     
     // 2. Bấm Phân Tích Cú Pháp Tự Động
     await page.click('button:has-text("Phân Tích Cú Pháp Tự Động")')

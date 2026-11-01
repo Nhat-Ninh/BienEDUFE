@@ -37,8 +37,11 @@ const handleLogin = async () => {
   }
 }
 
-// Quick Demo Logins for instant evaluation
+// Quick Demo Logins chỉ tồn tại ở bản dev (npm run dev). import.meta.env.DEV được Vite thay bằng
+// false khi build production nên cả nút lẫn thông tin đăng nhập demo bị loại khỏi bundle.
+const demoEnabled = import.meta.env.DEV
 const demoLogin = async (roleName) => {
+  if (!import.meta.env.DEV) return
   isLoading.value = true
   try {
     if (roleName === 'TEACHER') {
@@ -122,7 +125,7 @@ const demoLogin = async (roleName) => {
       </div>
 
       <!-- Quick Demo Access Bar -->
-      <div class="mt-6 pt-5 border-t border-slate-100 text-center">
+      <div v-if="demoEnabled" class="mt-6 pt-5 border-t border-slate-100 text-center">
         <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-center space-x-1">
           <Sparkles class="w-3.5 h-3.5 text-amber-500" />
           <span>Vào nhanh chế độ xem thử (Demo Mode)</span>
@@ -133,7 +136,7 @@ const demoLogin = async (roleName) => {
             @click="demoLogin('STUDENT')"
             class="py-2 px-3 text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition"
           >
-            🎓 Học Sinh (An 12A1)
+            🎓 Học Sinh (An)
           </button>
           <button
             type="button"

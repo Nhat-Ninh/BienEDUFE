@@ -142,7 +142,7 @@ const handleGrade = async (answer) => {
     // Refresh submission
     await selectSubmission(currentSubmission.value)
   } catch (err) {
-    errorMsg.value = err.response?.data?.message || err.message || 'Lỗi khi lưu điểm.'
+    errorMsg.value = err.detail || err.message || 'Lỗi khi lưu điểm.'
   } finally {
     isGrading.value = false
   }

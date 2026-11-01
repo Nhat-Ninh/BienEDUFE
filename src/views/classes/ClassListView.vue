@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { classService } from '@/services/classService'
+import { GRADES, GRADE_INFO, gradeLabel } from '@/constants/grades'
 import { Users, Plus, Key, Copy, Check, BookOpen, AlertCircle, Trash2, Archive, Filter } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
@@ -17,10 +18,13 @@ const filteredClasses = computed(() => {
   return classes.value.filter(c => c.gradeLevel === selectedGradeFilter.value)
 })
 
+// Chỉ hiện nút lọc cho những khối thực sự có lớp (học sinh chỉ thấy khối mình đang học)
+const gradesWithClasses = computed(() => GRADES.filter(g => classes.value.some(c => c.gradeLevel === g)))
+
 // Teacher Modal
 const showCreateModal = ref(false)
 const newClassName = ref('')
-const newGradeLevel = ref(12)
+const newGradeLevel = ref('') // giáo viên chọn khối khi tạo lớp, không mặc định lớp 12
 const newDescription = ref('')
 
 // Student Join Modal
@@ -49,15 +53,20 @@ const loadClasses = async () => {
 
 const handleCreateClass = async () => {
   if (!newClassName.value) return
+  if (!newGradeLevel.value) {
+    errorMessage.value = 'Vui lòng chọn khối lớp cho lớp học.'
+    return
+  }
   try {
     await classService.createClass({
       name: newClassName.value,
-      gradeLevel: newGradeLevel.value,
+      gradeLevel: Number(newGradeLevel.value),
       description: newDescription.value
     })
     successMessage.value = 'Đã tạo lớp học thành công!'
     showCreateModal.value = false
     newClassName.value = ''
+    newGradeLevel.value = ''
     newDescription.value = ''
     await loadClasses()
   } catch (err) {
@@ -164,7 +173,7 @@ onMounted(loadClasses)
           Tất Cả Khối Lớp
         </button>
         <button
-          v-for="g in [6, 7, 8, 9, 10, 11, 12]"
+          v-for="g in gradesWithClasses"
           :key="g"
           @click="selectedGradeFilter = g"
           :class="[
@@ -194,7 +203,7 @@ onMounted(loadClasses)
           </div>
 
           <h3 class="font-bold text-slate-900 text-base leading-snug">{{ c.name }}</h3>
-          <p class="text-xs text-slate-500 mt-1 line-clamp-2">{{ c.description || 'Chuyên đề Toán học nâng cao THPT' }}</p>
+          <p class="text-xs text-slate-500 mt-1 line-clamp-2">{{ c.description || (c.gradeLevel ? `Lớp học Toán ${gradeLabel(c.gradeLevel)}` : 'Lớp học Toán BienEDU') }}</p>
 
           <!-- Invite code for teacher -->
           <div v-if="c.inviteCode && authStore.isTeacher" class="mt-4 p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between">
@@ -245,15 +254,11 @@ onMounted(loadClasses)
           <label class="block text-xs font-semibold text-slate-700 mb-1">Khối lớp</label>
           <select 
             v-model="newGradeLevel"
+            data-testid="new-class-grade"
             class="w-full px-3.5 py-2.5 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-ocean-500 outline-none"
           >
-            <option :value="6">Khối 6 (Toán THCS • KNTT / Cánh Diều)</option>
-            <option :value="7">Khối 7 (Toán THCS)</option>
-            <option :value="8">Khối 8 (Toán THCS)</option>
-            <option :value="9">Khối 9 (Toán THCS • Ôn Thi Vào 10)</option>
-            <option :value="10">Khối 10 (Toán THPT • Chương trình mới 2018)</option>
-            <option :value="11">Khối 11 (Toán THPT)</option>
-            <option :value="12">Khối 12 (Toán THPT • Luyện Thi Quốc Gia & ĐGNL)</option>
+            <option value="" disabled>Chọn khối lớp</option>
+            <option v-for="g in GRADES" :key="g" :value="g">Khối {{ g }} ({{ GRADE_INFO[g].sub }})</option>
           </select>
         </div>
 

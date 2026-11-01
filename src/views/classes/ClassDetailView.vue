@@ -126,7 +126,7 @@ onMounted(loadData)
         <div>
           <div class="flex items-center space-x-2">
             <span class="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-ocean-50 text-ocean-700">
-              Khối {{ classDetail?.gradeLevel || 12 }}
+              {{ classDetail?.gradeLevel ? `Khối ${classDetail.gradeLevel}` : 'Chưa phân khối' }}
             </span>
             <span v-if="classDetail?.inviteCode" class="text-xs font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
               Mã vào lớp: {{ classDetail.inviteCode }}

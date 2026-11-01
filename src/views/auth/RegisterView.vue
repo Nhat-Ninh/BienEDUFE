@@ -3,7 +3,8 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { authService } from '@/services/authService'
-import { User, Phone, Mail, Lock, UserCheck, AlertCircle, ArrowRight } from 'lucide-vue-next'
+import { GRADES, GRADE_INFO } from '@/constants/grades'
+import { User, Phone, Mail, Lock, UserCheck, AlertCircle, ArrowRight, GraduationCap } from 'lucide-vue-next'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -13,12 +14,18 @@ const phone = ref('')
 const email = ref('')
 const password = ref('')
 const role = ref('STUDENT') // STUDENT or TEACHER
+const gradeLevel = ref('') // Khối lớp học sinh đăng ký (6–12)
 const isLoading = ref(false)
 const errorMessage = ref('')
 
 const handleRegister = async () => {
   if (!fullName.value || !phone.value || !password.value) {
     errorMessage.value = 'Vui lòng điền đầy đủ họ tên, số điện thoại và mật khẩu.'
+    return
+  }
+
+  if (role.value === 'STUDENT' && !gradeLevel.value) {
+    errorMessage.value = 'Vui lòng chọn khối lớp bạn đang học.'
     return
   }
 
@@ -31,7 +38,8 @@ const handleRegister = async () => {
       phone: phone.value,
       email: email.value || `${phone.value}@bienedu.vn`,
       password: password.value,
-      role: role.value
+      role: role.value,
+      ...(role.value === 'STUDENT' ? { gradeLevel: Number(gradeLevel.value) } : {})
     })
     
     // Đăng ký xong tự động lưu token nếu có
@@ -93,6 +101,25 @@ const handleRegister = async () => {
         >
           Giáo Viên / Trợ Giảng
         </button>
+      </div>
+
+      <div v-if="role === 'STUDENT'">
+        <label for="register-grade" class="block text-xs font-semibold text-slate-700 mb-1">Khối lớp đang học</label>
+        <div class="relative">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <GraduationCap class="w-4 h-4" />
+          </div>
+          <select
+            id="register-grade"
+            v-model="gradeLevel"
+            data-testid="register-grade"
+            class="w-full pl-9 pr-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-ocean-500 focus:border-transparent transition"
+            required
+          >
+            <option value="" disabled>Chọn khối lớp của bạn</option>
+            <option v-for="g in GRADES" :key="g" :value="g">{{ GRADE_INFO[g].label }} — {{ GRADE_INFO[g].sub }}</option>
+          </select>
+        </div>
       </div>
 
       <div>

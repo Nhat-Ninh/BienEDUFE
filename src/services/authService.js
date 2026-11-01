@@ -15,7 +15,7 @@ export const authService = {
 
   /**
    * Đăng ký tài khoản mới
-   * @param {{ fullName: string, phone: string, email: string, password: string, role: string }} data 
+   * @param {{ fullName: string, phone: string, email: string, password: string, role: string, gradeLevel?: number }} data 
    */
   async register(data) {
     return await api.post('/api/v1/auth/register', data)
@@ -34,6 +34,14 @@ export const authService = {
    */
   async getMe() {
     return await api.get('/api/v1/auth/me')
+  },
+
+  /**
+   * Học sinh chọn / đổi khối lớp (6–12)
+   * @param {number} gradeLevel
+   */
+  async updateGradeLevel(gradeLevel) {
+    return await api.put('/api/v1/auth/me/grade-level', { gradeLevel })
   },
 
   /**

@@ -54,6 +54,8 @@ D. (2; 3)
 Câu 2: [TỰ LUẬN] Tính thể tích khối tròn xoay khi quay hình phẳng giới hạn bởi $y = x^2$ và $y = 2x$ quanh trục $Ox$.
 *Đáp án: 64pi/15*`
 
+    await page.selectOption('[data-testid="bank-grade"]', '12')
+    await expect(page.locator('[data-testid="bank-unit"] option').nth(1)).toBeAttached({ timeout: 8000 })
     await page.fill('textarea[placeholder*="Dán nội dung đề thi vào đây"]', rawContent)
     await page.click('button:has-text("Phân Tích Cú Pháp Tự Động")')
     
@@ -81,9 +83,13 @@ Câu 2: [TỰ LUẬN] Tính thể tích khối tròn xoay khi quay hình phẳng
     const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 16)
     await page.fill('input[type="datetime-local"]', tomorrow)
 
-    // Bấm chọn bộ câu hỏi mẫu chuẩn Toán 12
-    await page.click('button:has-text("Bộ đề Toán 12 Mẫu (Trắc nghiệm + Tự luận)")')
-    await expect(page.locator('text=Đã chọn: 4 câu')).toBeVisible()
+    // Chọn câu hỏi từ ngân hàng đề đúng khối của lớp (lớp này là khối 12)
+    await page.click('button:has-text("Duyệt Chọn Từ Ngân Hàng Đề")')
+    await expect(page.locator('text=Đã chọn 0 câu hỏi')).toBeVisible({ timeout: 8000 })
+    await page.locator('div.cursor-pointer:has-text("#1200001")').click()
+    await page.locator('div.cursor-pointer:has-text("#1200002")').click()
+    await expect(page.locator('text=Đã chọn 2 câu hỏi')).toBeVisible()
+    await page.locator('div.fixed:has-text("Chọn Đề Giao Bài") button:has(svg)').first().click()
 
     // Xác nhận giao bài
     await page.click('button:has-text("Xác Nhận Giao Bài")')

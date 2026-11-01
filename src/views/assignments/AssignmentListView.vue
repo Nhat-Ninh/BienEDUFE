@@ -1,9 +1,11 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { assignmentService } from '@/services/assignmentService'
 import { classService } from '@/services/classService'
 import { exerciseService } from '@/services/exerciseService'
+import { catalogService } from '@/services/catalogService'
+import { gradeLabel } from '@/constants/grades'
 import MathRenderer from '@/components/MathRenderer.vue'
 import { 
   FileText, 
@@ -31,22 +33,51 @@ const showModal = ref(false)
 const title = ref('')
 const selectedClassId = ref('')
 const dueAt = ref('')
-const exerciseIdsStr = ref('1200001, 1200003, 1200004') // pre-filled with valid questions
-const selectedExerciseIds = ref([1200001, 1200003, 1200004])
+const exerciseIdsStr = ref('')
+const selectedExerciseIds = ref([])
 
 // Question Picker State
 const showQuestionPicker = ref(false)
 const availableExercises = ref([])
 const isPickerLoading = ref(false)
-const selectedUnitId = ref(120001)
+const selectedUnitId = ref(null)
+const units = ref([])
+const unitsGrade = ref(null) // khối của danh sách dạng bài đang nạp
 
-const units = [
-  { id: 120001, name: 'Lớp 12: Tính đơn điệu & Cực trị hàm số' },
-  { id: 120002, name: 'Lớp 12: Đường tiệm cận đồ thị hàm số' },
-  { id: 100001, name: 'Lớp 10: Bất phương trình bậc hai' },
-  { id: 90001, name: 'Lớp 9: Căn bậc hai & Biến đổi căn thức' },
-  { id: 60001, name: 'Lớp 6: Tập hợp & Số nguyên' }
-]
+// Khối của lớp đang được giao bài: chỉ cho chọn câu hỏi đúng khối đó
+const selectedClass = computed(() => classes.value.find(c => String(c.id) === String(selectedClassId.value)) || null)
+const selectedClassGrade = computed(() => selectedClass.value?.gradeLevel || null)
+
+// Nạp danh sách dạng bài (lesson unit) theo khối từ danh mục, thay cho ID cố định của lớp 12
+const loadUnitsForGrade = async (grade) => {
+  isPickerLoading.value = true
+  units.value = []
+  availableExercises.value = []
+  selectedUnitId.value = null
+  try {
+    units.value = await catalogService.getLessonUnitOptionsByGrade(grade)
+    unitsGrade.value = grade
+    if (units.value.length > 0) {
+      selectedUnitId.value = units.value[0].id
+      await loadUnitExercises(selectedUnitId.value)
+    }
+  } catch (err) {
+    console.error('Error loading lesson units:', err)
+  } finally {
+    isPickerLoading.value = false
+  }
+}
+
+// Đổi sang lớp khác khối thì bỏ các câu hỏi đã chọn (thuộc khối cũ)
+watch(selectedClassGrade, (g, old) => {
+  if (old && g !== old) {
+    selectedExerciseIds.value = []
+    exerciseIdsStr.value = ''
+    units.value = []
+    availableExercises.value = []
+    unitsGrade.value = null
+  }
+})
 
 const loadAssignments = async () => {
   isLoading.value = true
@@ -78,9 +109,14 @@ const loadUnitExercises = async (unitId) => {
 }
 
 const openQuestionPicker = async () => {
+  if (!selectedClass.value) {
+    alert('Vui lòng chọn lớp trước để xem ngân hàng câu hỏi đúng khối.')
+    return
+  }
   showQuestionPicker.value = true
-  if (availableExercises.value.length === 0) {
-    await loadUnitExercises(selectedUnitId.value)
+  const grade = selectedClassGrade.value
+  if (grade && unitsGrade.value !== grade) {
+    await loadUnitsForGrade(grade)
   }
 }
 
@@ -95,11 +131,6 @@ const toggleExerciseSelection = (id) => {
 }
 
 const isExerciseSelected = (id) => selectedExerciseIds.value.includes(id)
-
-const selectPresetQuestions = () => {
-  selectedExerciseIds.value = [1200001, 1200002, 1200003, 1200004]
-  exerciseIdsStr.value = selectedExerciseIds.value.join(', ')
-}
 
 const syncIdsFromInput = () => {
   if (!exerciseIdsStr.value) {
@@ -119,9 +150,11 @@ const handleCreate = async () => {
     return
   }
 
-  const exIds = selectedExerciseIds.value.length > 0 
-    ? selectedExerciseIds.value 
-    : [1200001, 1200003, 1200004]
+  const exIds = selectedExerciseIds.value
+  if (exIds.length === 0) {
+    alert('Vui lòng chọn ít nhất một câu hỏi cho bài giao.')
+    return
+  }
 
   const formattedDueAt = dueAt.value.includes('T')
     ? (dueAt.value.length === 16 ? dueAt.value + ':00' : dueAt.value)
@@ -137,11 +170,11 @@ const handleCreate = async () => {
     showModal.value = false
     title.value = ''
     dueAt.value = ''
-    exerciseIdsStr.value = '1200001, 1200003, 1200004'
-    selectedExerciseIds.value = [1200001, 1200003, 1200004]
+    exerciseIdsStr.value = ''
+    selectedExerciseIds.value = []
     await loadAssignments()
   } catch (e) {
-    alert(e.response?.data?.message || e.message || 'Lỗi khi tạo bài kiểm tra.')
+    alert(e.detail || e.message || 'Lỗi khi tạo bài kiểm tra.')
   }
 }
 
@@ -287,15 +320,6 @@ onMounted(loadAssignments)
               <BookOpen class="w-3.5 h-3.5" />
               <span>Duyệt Chọn Từ Ngân Hàng Đề</span>
             </button>
-
-            <button
-              type="button"
-              @click="selectPresetQuestions"
-              class="px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold hover:bg-slate-200 transition flex items-center space-x-1.5 cursor-pointer"
-            >
-              <Sparkles class="w-3.5 h-3.5 text-amber-500" />
-              <span>Bộ đề Toán 12 Mẫu (Trắc nghiệm + Tự luận)</span>
-            </button>
           </div>
 
           <div class="pt-2">
@@ -304,7 +328,7 @@ onMounted(loadAssignments)
               v-model="exerciseIdsStr"
               @input="syncIdsFromInput"
               type="text" 
-              placeholder="1200001, 1200002, 1200003, 1200004"
+              placeholder="Chọn từ ngân hàng đề hoặc nhập ID, cách nhau dấu phẩy"
               class="w-full px-3.5 py-2 text-xs font-mono border border-slate-200 rounded-xl focus:ring-2 focus:ring-ocean-500 outline-none"
             />
           </div>
@@ -323,7 +347,9 @@ onMounted(loadAssignments)
         <div class="flex items-center justify-between pb-3 border-b border-slate-100 flex-shrink-0">
           <div>
             <h3 class="text-base font-bold text-slate-900">Ngân Hàng Câu Hỏi — Chọn Đề Giao Bài</h3>
-            <p class="text-xs text-slate-500">Đã chọn {{ selectedExerciseIds.length }} câu hỏi</p>
+            <p class="text-xs text-slate-500">
+              {{ selectedClassGrade ? `Toán ${gradeLabel(selectedClassGrade)} • ` : '' }}Đã chọn {{ selectedExerciseIds.length }} câu hỏi
+            </p>
           </div>
           <button @click="showQuestionPicker = false" class="p-1 rounded-full text-slate-400 hover:text-slate-600">
             <X class="w-5 h-5" />
@@ -346,6 +372,9 @@ onMounted(loadAssignments)
         <div class="flex-1 overflow-y-auto space-y-3 pr-1">
           <div v-if="isPickerLoading" class="py-12 text-center text-xs text-slate-400">
             Đang tải câu hỏi...
+          </div>
+          <div v-else-if="units.length === 0" class="py-12 text-center text-xs text-slate-400">
+            Chưa có dạng bài nào cho khối này trong ngân hàng đề.
           </div>
           <div 
             v-else

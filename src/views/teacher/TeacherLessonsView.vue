@@ -1,7 +1,8 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { lessonService } from '@/services/lessonService'
 import { classService } from '@/services/classService'
+import { GRADES } from '@/constants/grades'
 import MathRenderer from '@/components/MathRenderer.vue'
 import SmartPdfQuizModal from '@/components/SmartPdfQuizModal.vue'
 import LessonTrackingModal from '@/components/LessonTrackingModal.vue'
@@ -42,7 +43,7 @@ const form = ref({
   classId: '',
   title: '',
   description: '',
-  gradeLevel: 12,
+  gradeLevel: '', // theo khối của lớp được chọn
   orderIndex: 0,
   theoryFileName: '',
   theoryFileUrl: '',
@@ -55,6 +56,12 @@ const form = ref({
 const isUploadingTheory = ref(false)
 const isUploadingExercise = ref(false)
 const isSubmitting = ref(false)
+
+// Chọn lớp nào thì khối lớp của bài học theo khối của lớp đó (không mặc định lớp 12)
+watch(() => form.value.classId, (id) => {
+  const c = classes.value.find(x => x.id === id)
+  if (c?.gradeLevel) form.value.gradeLevel = c.gradeLevel
+})
 
 const loadData = async () => {
   isLoading.value = true
@@ -71,6 +78,7 @@ const loadData = async () => {
       classes.value = classRes.value.data?.content || classRes.value.content || []
       if (classes.value.length > 0 && !form.value.classId) {
         form.value.classId = classes.value[0].id
+        form.value.gradeLevel = classes.value[0].gradeLevel || ''
       }
     }
   } catch (err) {
@@ -142,7 +150,7 @@ const handleCreateLesson = async () => {
       classId: form.value.classId,
       title: form.value.title.trim(),
       description: form.value.description.trim(),
-      gradeLevel: form.value.gradeLevel,
+      gradeLevel: form.value.gradeLevel || undefined,
       theoryFileName: form.value.theoryFileName,
       theoryFileUrl: form.value.theoryFileUrl,
       theoryContentMd: form.value.theoryContentMd,
@@ -156,7 +164,7 @@ const handleCreateLesson = async () => {
     resetForm()
     await loadData()
   } catch (err) {
-    errorMessage.value = err.response?.data?.message || err.message || 'Lỗi khi tạo bài học.'
+    errorMessage.value = err.detail || err.message || 'Lỗi khi tạo bài học.'
   } finally {
     isSubmitting.value = false
   }
@@ -193,7 +201,7 @@ const resetForm = () => {
     classId: classes.value.length > 0 ? classes.value[0].id : '',
     title: '',
     description: '',
-    gradeLevel: 12,
+    gradeLevel: classes.value.length > 0 ? (classes.value[0].gradeLevel || '') : '',
     orderIndex: 0,
     theoryFileName: '',
     theoryFileUrl: '',
@@ -501,15 +509,10 @@ onMounted(loadData)
               <label class="block text-xs font-bold text-slate-700 mb-1">Khối lớp</label>
               <select 
                 v-model.number="form.gradeLevel" 
+                data-testid="lesson-grade"
                 class="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none"
               >
-                <option :value="6">Khối 6</option>
-                <option :value="7">Khối 7</option>
-                <option :value="8">Khối 8</option>
-                <option :value="9">Khối 9</option>
-                <option :value="10">Khối 10</option>
-                <option :value="11">Khối 11</option>
-                <option :value="12">Khối 12</option>
+                <option v-for="g in GRADES" :key="g" :value="g">Khối {{ g }}</option>
               </select>
             </div>
           </div>

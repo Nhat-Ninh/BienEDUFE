@@ -24,21 +24,21 @@ test.describe('1. Landing Page & Multi-Grade Curriculum Explorer', () => {
     await page.click('button:has-text("Làm lại")')
 
     // 2. Chuyển sang Lớp 6
-    await page.click('button:has-text("Lớp 6")')
+    await page.locator('button:has-text(\"Lớp 6\")').first().click()
     await expect(page.locator('div.bg-ocean-50:has-text("Toán Lớp 6")')).toBeVisible()
     // Chọn đáp án A ($41$)
     await page.locator('div:has(div.bg-ocean-50:has-text("Toán Lớp 6")) button:has-text("A")').click()
     await expect(page.locator('text=Rất chính xác!')).toBeVisible()
 
     // 3. Chuyển sang Lớp 9 (Vào 10)
-    await page.click('button:has-text("Lớp 9 (Vào 10)")')
+    await page.locator('button:has-text(\"Lớp 9 (Vào 10)\")').first().click()
     await expect(page.locator('div.bg-ocean-50:has-text("Toán Lớp 9")')).toBeVisible()
     // Chọn đáp án B ($2\sqrt{10} - 3$)
     await page.locator('div:has(div.bg-ocean-50:has-text("Toán Lớp 9")) button:has-text("B")').click()
     await expect(page.locator('text=Rất chính xác!')).toBeVisible()
 
     // 4. Chuyển sang Lớp 10
-    await page.click('button:has-text("Lớp 10")')
+    await page.locator('button:has-text(\"Lớp 10\")').first().click()
     await expect(page.locator('div.bg-ocean-50:has-text("Toán Lớp 10")')).toBeVisible()
     // Chọn đáp án A ($(1; 3)$)
     await page.locator('div:has(div.bg-ocean-50:has-text("Toán Lớp 10")) button:has-text("A")').click()

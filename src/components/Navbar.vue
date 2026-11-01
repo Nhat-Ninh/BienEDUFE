@@ -1,11 +1,15 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
-import { LogOut, User, Globe, Sparkles, ShoppingCart } from 'lucide-vue-next'
+import GradeSelectModal from '@/components/GradeSelectModal.vue'
+import { gradeLabel } from '@/constants/grades'
+import { LogOut, User, Globe, Sparkles, ShoppingCart, Menu } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 const router = useRouter()
+const showGradeModal = ref(false)
+defineEmits(['toggle-menu'])
 
 onMounted(async () => {
   if (authStore.isAuthenticated && authStore.isStudent && !authStore.subscription) {
@@ -22,6 +26,16 @@ const handleLogout = async () => {
 <template>
   <header class="h-16 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30">
     <div class="flex items-center space-x-3 sm:space-x-4">
+      <!-- Nút mở menu điều hướng trên màn hình nhỏ (thanh bên bị ẩn dưới md) -->
+      <button
+        type="button"
+        data-testid="mobile-menu-btn"
+        class="md:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100"
+        aria-label="Mở menu"
+        @click="$emit('toggle-menu')"
+      >
+        <Menu class="w-5 h-5" />
+      </button>
       <router-link to="/app/dashboard" class="flex items-center space-x-2">
         <img src="/logo.png" alt="BienEDU" class="h-10 w-auto object-contain" />
       </router-link>
@@ -35,6 +49,18 @@ const handleLogout = async () => {
       >
         {{ authStore.isTeacher ? '👨‍🏫 Giáo Viên' : '🎓 Học Sinh' }}
       </span>
+
+      <!-- Khối lớp học sinh đã đăng ký (bấm để đổi) -->
+      <button
+        v-if="authStore.isStudent && authStore.gradeLevel"
+        type="button"
+        data-testid="navbar-grade-badge"
+        class="text-xs font-bold px-2.5 py-0.5 rounded-full border bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100 transition"
+        title="Bấm để đổi khối lớp"
+        @click="showGradeModal = true"
+      >
+        {{ gradeLabel(authStore.gradeLevel) }}
+      </button>
 
       <!-- Student Plan Badge / Buy Button -->
       <template v-if="!authStore.isTeacher">
@@ -93,5 +119,6 @@ const handleLogout = async () => {
         <span class="hidden sm:inline font-medium">Thoát</span>
       </button>
     </div>
+    <GradeSelectModal :open="showGradeModal" @close="showGradeModal = false" />
   </header>
 </template>

@@ -72,7 +72,7 @@ const handleSelectPlan = async (plan) => {
       }
     }
   } catch (err) {
-    errorMessage.value = err.response?.data?.message || 'Không thể tạo đơn hàng, vui lòng thử lại.'
+    errorMessage.value = err.detail || err.message || 'Không thể tạo đơn hàng, vui lòng thử lại.'
   } finally {
     checkoutLoading.value = false
   }
@@ -89,7 +89,7 @@ const handleConfirmPayment = async () => {
       await fetchPlansAndStatus()
     }
   } catch (err) {
-    errorMessage.value = err.response?.data?.message || 'Chưa thể xác nhận thanh toán. Vui lòng thử lại sau giây lát.'
+    errorMessage.value = err.detail || err.message || 'Chưa thể xác nhận thanh toán. Vui lòng thử lại sau giây lát.'
   } finally {
     confirmLoading.value = false
   }
@@ -111,7 +111,7 @@ const copyToClipboard = (text) => {
       <div class="relative z-10 max-w-2xl">
         <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-sky-200 text-xs font-semibold mb-4 border border-white/10">
           <Sparkles class="w-3.5 h-3.5 text-amber-300" />
-          <span>Nâng Tầm Năng Lực Toán THPT & Đánh Giá Năng Lực</span>
+          <span>Nâng Tầm Năng Lực Toán & Đánh Giá Năng Lực</span>
         </div>
         <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight">
           Gói Hội Viên Học Tập BienEDU VIP

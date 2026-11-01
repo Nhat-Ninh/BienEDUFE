@@ -44,15 +44,13 @@ test.describe('7. Edge Cases, Multi-Case & System Stability Verification', () =>
     await expect(alertBox).toBeVisible({ timeout: 5000 })
   })
 
-  test('Chuyển đổi liên tục giữa 7 khối lớp (Lớp 6 đến 12) mượt mà, không giật lag hay xung đột state', async ({ page }) => {
-    // 1. Đăng nhập học sinh
+  test('Giáo viên chuyển đổi liên tục giữa 7 khối lớp (Lớp 6 đến 12) mượt mà, không xung đột state', async ({ page }) => {
     await page.goto('/auth/login')
-    await page.fill('input[type="text"]', studentPhone)
-    await page.fill('input[type="password"]', studentPass)
+    await page.fill('input[type="text"]', teacherPhone)
+    await page.fill('input[type="password"]', teacherPass)
     await page.click('button[type="submit"]')
     await expect(page).toHaveURL(/\/app\/dashboard/)
 
-    // 2. Vào màn hình Luyện tập
     await page.goto('/app/practice')
 
     const grades = [6, 7, 8, 9, 10, 11, 12]

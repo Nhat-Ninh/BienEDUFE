@@ -1,5 +1,7 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+import { GRADES, GRADE_INFO, gradeSubjectCode } from '@/constants/grades'
 import { catalogService } from '@/services/catalogService'
 import { exerciseService } from '@/services/exerciseService'
 import MathRenderer from '@/components/MathRenderer.vue'
@@ -23,18 +25,26 @@ const studentChoices = ref({})
 const verifiedAnswers = ref({})
 const isLoading = ref(true)
 
-// Grade helper
-const gradeList = [
-  { grade: 6, label: 'Lớp 6', sub: 'THCS • KNTT / Cánh Diều', code: 'TOAN_6' },
-  { grade: 7, label: 'Lớp 7', sub: 'THCS', code: 'TOAN_7' },
-  { grade: 8, label: 'Lớp 8', sub: 'THCS', code: 'TOAN_8' },
-  { grade: 9, label: 'Lớp 9', sub: 'THCS • Ôn Thi Vào 10', code: 'TOAN_9' },
-  { grade: 10, label: 'Lớp 10', sub: 'THPT • CT 2018', code: 'TOAN_10' },
-  { grade: 11, label: 'Lớp 11', sub: 'THPT', code: 'TOAN_11' },
-  { grade: 12, label: 'Lớp 12', sub: 'THPT • Ôn Thi QG & ĐGNL', code: 'TOAN_12' }
-]
+// Khối lớp: học sinh chỉ thấy đúng khối mình đã đăng ký; giáo viên xem được mọi khối (6–12)
+const authStore = useAuthStore()
 
-const currentGrade = ref(12)
+const gradeList = GRADES.map(g => ({
+  grade: g,
+  label: GRADE_INFO[g].label,
+  sub: GRADE_INFO[g].sub,
+  code: gradeSubjectCode(g)
+}))
+
+const isStudentLocked = computed(() => authStore.isStudent)
+const availableGrades = computed(() =>
+  isStudentLocked.value && authStore.gradeLevel
+    ? gradeList.filter(g => g.grade === authStore.gradeLevel)
+    : isStudentLocked.value
+      ? []
+      : gradeList
+)
+
+const currentGrade = ref(authStore.gradeLevel || 12)
 
 let currentSubjectRequestId = 0
 
@@ -105,14 +115,18 @@ const switchGrade = async (gradeItem) => {
   currentGrade.value = gradeItem.grade
   isLoading.value = true
   
-  // Find subject matching this grade code or id
-  const matchedSubject = subjects.value.find(s => s.code === gradeItem.code || s.id === gradeItem.grade)
+  // Chỉ lấy môn đúng mã TOAN_<khối>; không có thì để trống, tuyệt đối không rơi sang khối khác
+  const matchedSubject = subjects.value.find(s => s.code === gradeItem.code)
   if (matchedSubject) {
     selectedSubjectId.value = matchedSubject.id
     await loadSectionsForSubject(matchedSubject.id)
-  } else if (subjects.value.length > 0) {
-    selectedSubjectId.value = subjects.value[0].id
-    await loadSectionsForSubject(selectedSubjectId.value)
+  } else {
+    selectedSubjectId.value = null
+    sections.value = []
+    topics.value = []
+    lessonUnits.value = []
+    selectedUnit.value = null
+    exercises.value = []
   }
   
   isLoading.value = false
@@ -142,26 +156,31 @@ const verifyAnswer = (exercise) => {
   verifiedAnswers.value[exercise.id] = true
 }
 
-onMounted(async () => {
+const initCatalog = async () => {
   isLoading.value = true
   try {
-    const subRes = await catalogService.getSubjects().catch(() => null)
-    subjects.value = subRes?.data || subRes || []
-
-    if (subjects.value.length > 0) {
-      // Default to Grade 12 or first subject
-      const defaultSub = subjects.value.find(s => s.code === 'TOAN_12' || s.id === 12) || subjects.value[0]
-      selectedSubjectId.value = defaultSub.id
-      if (defaultSub.code === 'TOAN_12' || defaultSub.id === 12) currentGrade.value = 12
-      else if (defaultSub.code?.startsWith('TOAN_')) currentGrade.value = parseInt(defaultSub.code.replace('TOAN_', ''))
-      
-      await loadSectionsForSubject(selectedSubjectId.value)
+    if (subjects.value.length === 0) {
+      const subRes = await catalogService.getSubjects().catch(() => null)
+      subjects.value = subRes?.data || subRes || []
     }
+
+    // Học sinh chưa chọn khối (tài khoản cũ): chờ chọn trong hộp thoại bắt buộc
+    if (authStore.isStudent && !authStore.gradeLevel) return
+
+    const target = gradeList.find(g => g.grade === (authStore.gradeLevel || currentGrade.value)) || gradeList[gradeList.length - 1]
+    await switchGrade(target)
   } catch (e) {
     console.error('Failed to init catalog:', e)
   } finally {
     isLoading.value = false
   }
+}
+
+onMounted(initCatalog)
+
+// Học sinh đổi khối lớp (từ thanh điều hướng) -> nạp lại đúng nội dung khối mới
+watch(() => authStore.gradeLevel, (g, old) => {
+  if (g && g !== old) initCatalog()
 })
 </script>
 
@@ -173,10 +192,14 @@ onMounted(async () => {
         <div>
           <div class="inline-flex items-center space-x-2 text-xs font-semibold text-ocean-600 bg-ocean-50 px-3 py-1 rounded-full mb-1">
             <GraduationCap class="w-3.5 h-3.5" />
-            <span>Chương trình Toán THCS & THPT Chuẩn K12</span>
+            <span>{{ isStudentLocked && authStore.gradeLevel ? GRADE_INFO[authStore.gradeLevel].tagline : 'Chương trình Toán THCS & THPT Chuẩn K12' }}</span>
           </div>
-          <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Luyện Tập Toán Theo Khối Lớp & Chuyên Đề</h1>
-          <p class="text-xs text-slate-500 mt-0.5">Chọn khối lớp để xem cây kiến thức, học lý thuyết cốt lõi, bẫy sai lầm và luyện giải câu hỏi phân loại</p>
+          <h1 class="text-2xl font-bold text-slate-900 tracking-tight" data-testid="practice-title">
+            {{ isStudentLocked && authStore.gradeLevel ? `Luyện Tập Toán ${GRADE_INFO[authStore.gradeLevel].label} Theo Chuyên Đề` : 'Luyện Tập Toán Theo Khối Lớp & Chuyên Đề' }}
+          </h1>
+          <p class="text-xs text-slate-500 mt-0.5">
+            {{ isStudentLocked ? 'Xem cây kiến thức, học lý thuyết cốt lõi, bẫy sai lầm và luyện giải câu hỏi đúng theo khối lớp bạn đã đăng ký' : 'Chọn khối lớp để xem cây kiến thức, học lý thuyết cốt lõi, bẫy sai lầm và luyện giải câu hỏi phân loại' }}
+          </p>
         </div>
 
         <!-- Tab Switcher -->
@@ -211,13 +234,14 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Grade Selector Bar: 6 to 12 -->
-      <div class="bg-white p-2 border border-slate-200/90 rounded-2xl shadow-xs overflow-x-auto flex items-center gap-2">
+      <!-- Grade Selector Bar: học sinh chỉ thấy khối của mình, giáo viên thấy 6–12 -->
+      <div data-testid="grade-selector" class="bg-white p-2 border border-slate-200/90 rounded-2xl shadow-xs overflow-x-auto flex items-center gap-2">
         <span class="text-xs font-bold text-slate-400 uppercase tracking-wider px-3 whitespace-nowrap">Khối Lớp:</span>
         <div class="flex items-center space-x-2">
           <button
-            v-for="g in gradeList"
+            v-for="g in availableGrades"
             :key="g.grade"
+            :data-testid="`practice-grade-${g.grade}`"
             @click="switchGrade(g)"
             :class="[
               'px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-2 whitespace-nowrap cursor-pointer',
