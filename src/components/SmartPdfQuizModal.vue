@@ -1,22 +1,21 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { extractTextFromPdf, parseExamQuestions } from '@/utils/mathExamParser'
+import { ref, computed, onMounted } from 'vue'
 import { lessonService } from '@/services/lessonService'
+import { questionNeedsAnswer } from '@/utils/pdfImportMarkdown'
 import MathRenderer from '@/components/MathRenderer.vue'
+import PdfTemplateGuide from '@/components/PdfTemplateGuide.vue'
 import { gradeLabel, normalizeGrade } from '@/constants/grades'
-import { 
-  X, 
-  Sparkles, 
-  FileUp, 
-  Check, 
-  Trash2, 
-  Plus, 
-  CheckCircle2, 
-  HelpCircle, 
-  Clock, 
-  BookOpen, 
+import {
+  X,
+  Sparkles,
+  FileUp,
+  Check,
+  Trash2,
+  Plus,
+  CheckCircle2,
   AlertCircle,
-  FileText
+  AlertTriangle,
+  HelpCircle
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -28,21 +27,36 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'quizCreated'])
 
+// Bài học đã có bài kiểm tra → chế độ sửa; chưa có → chế độ tạo mới
+const isEditMode = computed(() => !!props.lesson.quizAssignmentId)
+
 // State
-const activeStep = ref(1) // 1: Input PDF/Text, 2: Visual Editor & Publish
+const activeStep = ref(isEditMode.value ? 2 : 1) // 1: Input PDF/Text, 2: Visual Editor & Publish
 const isReadingPdf = ref(false)
+const isLoadingExisting = ref(false)
 const rawText = ref('')
 const uploadFileName = ref('')
 const parsedQuestions = ref([])
+const parseWarnings = ref([])
 const errorMessage = ref('')
 const successMessage = ref('')
 const isSubmitting = ref(false)
+const showGuide = ref(false)
+// Đã có học sinh nộp bài: chỉ sửa nội dung từng câu, không thêm / xóa câu
+const hasSubmissions = ref(false)
 
 // Quiz metadata
 const quizTitle = ref(`Bài kiểm tra: ${props.lesson.title}`)
 const quizDescription = ref('Bài kiểm tra trắc nghiệm đánh giá mức độ tiếp thu lý thuyết')
 const durationMinutes = ref(15)
 const dueAt = ref('')
+
+const QUESTION_TYPES = [
+  { value: 'MULTIPLE_CHOICE', label: 'Trắc nghiệm' },
+  { value: 'TRUE_FALSE', label: 'Đúng / Sai' },
+  { value: 'SHORT_ANSWER', label: 'Trả lời ngắn' },
+  { value: 'ESSAY', label: 'Tự luận' }
+]
 
 // Đề thi mẫu theo đúng khối của bài học để trải nghiệm 1 chạm (không dùng chung đề lớp 12)
 const SAMPLE_EXAMS = {
@@ -176,46 +190,115 @@ const loadSampleExam = () => {
   if (sampleExam.value) rawText.value = sampleExam.value
 }
 
-// Xử lý khi người dùng chọn file PDF
+// Câu trả lời của server → câu hỏi chỉnh sửa được trên UI
+const toEditable = (q) => ({
+  id: q.id ?? null,
+  lessonUnitId: q.lessonUnitId ?? null,
+  groupLabel: q.groupLabel || '',
+  contentMd: q.contentMd || '',
+  type: q.type || 'MULTIPLE_CHOICE',
+  difficulty: q.difficulty || 'MEDIUM',
+  choices: (q.choices || []).map(c => ({ key: c.key, text: c.text || '' })),
+  correctAnswer: q.correctAnswer || '',
+  solutionMd: q.solutionMd || '',
+  warnings: q.warnings || []
+})
+
+const applyParsed = (data) => {
+  parsedQuestions.value = (data.questions || []).map(toEditable)
+  parseWarnings.value = data.warnings || []
+}
+
+// Sửa bài kiểm tra đã xuất bản: nạp câu hỏi hiện có từ server
+onMounted(async () => {
+  if (!isEditMode.value) return
+  isLoadingExisting.value = true
+  try {
+    const res = await lessonService.getQuizForLesson(props.lesson.id)
+    const data = res.data || res
+    quizTitle.value = data.title || quizTitle.value
+    quizDescription.value = data.description || ''
+    dueAt.value = data.dueAt ? toLocalInput(data.dueAt) : ''
+    hasSubmissions.value = !!data.hasSubmissions
+    parsedQuestions.value = (data.questions || []).map(toEditable)
+  } catch (err) {
+    errorMessage.value = err.detail || err.message || 'Không tải được bài kiểm tra hiện có.'
+  } finally {
+    isLoadingExisting.value = false
+  }
+})
+
+// "2026-11-02T08:30:00" → giá trị cho <input type="datetime-local">
+const toLocalInput = (iso) => String(iso).slice(0, 16)
+
+// Chọn file PDF: server bóc tách ngay, giáo viên chỉ việc xem lại và xuất bản
 const handlePdfUpload = async (event) => {
   const file = event.target.files[0]
+  event.target.value = ''
   if (!file) return
+  if (isEditMode.value && !confirmReplace()) return
 
   uploadFileName.value = file.name
+  await runParse({ file })
+}
+
+const confirmReplace = () => {
+  if (parsedQuestions.value.length === 0) return true
+  return confirm(`Nạp đề mới sẽ thay thế toàn bộ ${parsedQuestions.value.length} câu hiện tại. Tiếp tục?`)
+}
+
+const runParse = async ({ file = null, text = '' }) => {
   isReadingPdf.value = true
   errorMessage.value = ''
-
   try {
-    const text = await extractTextFromPdf(file)
-    rawText.value = text
+    const res = await lessonService.parsePdf({ file, rawText: text, kind: 'QUIZ' })
+    const data = res.data || res
+    if (!data.questions?.length) {
+      parseWarnings.value = data.warnings || []
+      errorMessage.value = data.warnings?.[0]
+        || 'Không tìm thấy câu hỏi nào. Mỗi câu cần bắt đầu bằng "Câu 1." trên một dòng riêng.'
+      return
+    }
+    applyParsed(data)
+    activeStep.value = 2
   } catch (err) {
-    errorMessage.value = err.message || 'Không thể đọc nội dung file PDF.'
+    errorMessage.value = err.detail || err.message || 'Không thể đọc nội dung file PDF.'
   } finally {
     isReadingPdf.value = false
   }
 }
 
-// Chạy thuật toán bóc tách câu hỏi
-const handleParseQuestions = () => {
+// Bóc tách từ văn bản dán vào (cùng bộ bóc tách phía server)
+const handleParseQuestions = async () => {
   if (!rawText.value.trim()) {
     errorMessage.value = 'Vui lòng dán văn bản hoặc tải lên file PDF đề thi.'
     return
   }
-
-  const result = parseExamQuestions(rawText.value)
-  if (result.length === 0) {
-    errorMessage.value = 'Không tìm thấy câu hỏi nào hợp lệ. Đảm bảo cấu trúc đề thi có dạng: "Câu 1: ... A. ... B. ... C. ... D. ..."'
-    return
-  }
-
-  parsedQuestions.value = result
-  errorMessage.value = ''
-  activeStep.value = 2
+  if (isEditMode.value && !confirmReplace()) return
+  await runParse({ text: rawText.value })
 }
 
 // Click trực tiếp vào đáp án A/B/C/D để chọn đáp án đúng
-const setCorrectAnswer = (questionIndex, choiceId) => {
-  parsedQuestions.value[questionIndex].correctAnswer = choiceId
+const setCorrectAnswer = (questionIndex, choiceKey) => {
+  parsedQuestions.value[questionIndex].correctAnswer = choiceKey
+}
+
+const tfValues = (q) => {
+  const parts = (q.correctAnswer || '').split(',')
+  return [0, 1, 2, 3].map(i => parts[i] || '')
+}
+
+const setTrueFalse = (q, index, value) => {
+  const next = tfValues(q)
+  next[index] = value
+  q.correctAnswer = next.every(v => !v) ? '' : next.join(',')
+}
+
+const changeType = (q) => {
+  q.correctAnswer = ''
+  if (q.type === 'MULTIPLE_CHOICE' && q.choices.length === 0) {
+    q.choices = ['A', 'B', 'C', 'D'].map(key => ({ key, text: '' }))
+  }
 }
 
 // Xóa câu hỏi khỏi danh sách
@@ -226,24 +309,47 @@ const removeQuestion = (index) => {
 // Thêm câu hỏi thủ công
 const addEmptyQuestion = () => {
   parsedQuestions.value.push({
+    id: null,
+    lessonUnitId: null,
+    groupLabel: '',
     contentMd: 'Câu hỏi mới: Điền nội dung câu hỏi tại đây...',
     type: 'MULTIPLE_CHOICE',
     difficulty: 'MEDIUM',
     choices: [
-      { id: 'A', content: 'Phương án A' },
-      { id: 'B', content: 'Phương án B' },
-      { id: 'C', content: 'Phương án C' },
-      { id: 'D', content: 'Phương án D' }
+      { key: 'A', text: 'Phương án A' },
+      { key: 'B', text: 'Phương án B' },
+      { key: 'C', text: 'Phương án C' },
+      { key: 'D', text: 'Phương án D' }
     ],
     correctAnswer: 'A',
-    solutionMd: ''
+    solutionMd: '',
+    warnings: []
   })
 }
 
-// Lưu & Xuất bản bài kiểm tra
+const missingAnswerCount = computed(() => parsedQuestions.value.filter(questionNeedsAnswer).length)
+
+// Chỉ gửi đúng các trường server cần (bỏ nhãn nhóm, cảnh báo...)
+const toPayload = (q) => ({
+  id: q.id || undefined,
+  lessonUnitId: q.lessonUnitId || undefined,
+  contentMd: q.contentMd,
+  type: q.type,
+  difficulty: q.difficulty,
+  choices: q.type === 'MULTIPLE_CHOICE' ? q.choices : [],
+  correctAnswer: q.type === 'ESSAY' ? null : (q.correctAnswer || null),
+  solutionMd: q.solutionMd || null
+})
+
+// Lưu & Xuất bản (hoặc lưu thay đổi) bài kiểm tra
 const handlePublishQuiz = async () => {
   if (parsedQuestions.value.length === 0) {
     errorMessage.value = 'Đề thi phải có ít nhất 1 câu hỏi.'
+    return
+  }
+  const firstMissing = parsedQuestions.value.findIndex(questionNeedsAnswer)
+  if (firstMissing !== -1) {
+    errorMessage.value = `Câu ${firstMissing + 1} chưa có đáp án đúng. Hãy chọn đáp án (còn ${missingAnswerCount.value} câu thiếu) trước khi lưu.`
     return
   }
 
@@ -256,17 +362,21 @@ const handlePublishQuiz = async () => {
       description: quizDescription.value.trim(),
       durationMinutes: durationMinutes.value || 15,
       dueAt: dueAt.value ? new Date(dueAt.value).toISOString() : null,
-      questions: parsedQuestions.value
+      questions: parsedQuestions.value.map(toPayload)
     }
 
-    const res = await lessonService.createQuizForLesson(props.lesson.id, payload)
-    successMessage.value = '🎉 Xuất bản bài kiểm tra thành công!'
+    const res = isEditMode.value
+      ? await lessonService.updateQuizForLesson(props.lesson.id, payload)
+      : await lessonService.createQuizForLesson(props.lesson.id, payload)
+    successMessage.value = isEditMode.value
+      ? '✅ Đã lưu thay đổi bài kiểm tra!'
+      : '🎉 Xuất bản bài kiểm tra thành công!'
     emit('quizCreated', res.data || res)
     setTimeout(() => {
       emit('close')
     }, 1200)
   } catch (err) {
-    errorMessage.value = err.detail || err.message || 'Lỗi khi tạo bài kiểm tra.'
+    errorMessage.value = err.detail || err.message || 'Lỗi khi lưu bài kiểm tra.'
   } finally {
     isSubmitting.value = false
   }
@@ -276,7 +386,7 @@ const handlePublishQuiz = async () => {
 <template>
   <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
     <div class="bg-white rounded-3xl max-w-5xl w-full my-8 shadow-2xl border border-slate-200/90 flex flex-col max-h-[90vh]">
-      
+
       <!-- Header -->
       <div class="p-6 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
         <div>
@@ -285,10 +395,10 @@ const handlePublishQuiz = async () => {
             <span>Công Cụ Bóc Tách PDF Thông Minh</span>
           </div>
           <h2 class="text-lg font-bold text-slate-900">
-            Tạo Bài Kiểm Tra Cho Bài Học: {{ lesson.title }}
+            {{ isEditMode ? 'Sửa Bài Kiểm Tra Của Bài Học' : 'Tạo Bài Kiểm Tra Cho Bài Học' }}: {{ lesson.title }}
           </h2>
         </div>
-        <button 
+        <button
           @click="$emit('close')"
           class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition"
         >
@@ -310,14 +420,27 @@ const handlePublishQuiz = async () => {
       <!-- Steps Content -->
       <div class="p-6 overflow-y-auto flex-1 space-y-6">
 
+        <div v-if="isLoadingExisting" class="py-12 text-center text-xs text-slate-400">
+          Đang tải bài kiểm tra hiện có...
+        </div>
+
         <!-- BƯỚC 1: Chọn file PDF hoặc Dán văn bản -->
-        <div v-if="activeStep === 1" class="space-y-5">
+        <div v-else-if="activeStep === 1" class="space-y-5">
           <div class="bg-gradient-to-r from-ocean-50 to-sky-50 border border-ocean-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div class="space-y-0.5">
               <h4 class="text-xs font-bold text-ocean-900">Cách thức hoạt động</h4>
               <p class="text-[11px] text-slate-600">
-                Tải lên file PDF đề thi hoặc dán nội dung thô. Hệ thống AI Parser sẽ tự động bóc tách từng câu hỏi, công thức toán LaTeX, 4 đáp án và đáp án đúng.
+                Chỉ cần chọn file PDF đề thi: máy chủ tự đọc và bóc tách từng câu hỏi, công thức LaTeX, các phương án, đáp án đúng và lời giải. Bạn xem lại, sửa nếu cần rồi xuất bản.
               </p>
+              <button
+                type="button"
+                data-testid="open-pdf-guide"
+                @click="showGuide = true"
+                class="text-[11px] font-bold text-ocean-700 hover:text-ocean-900 underline underline-offset-2 flex items-center space-x-1 pt-0.5"
+              >
+                <HelpCircle class="w-3.5 h-3.5" />
+                <span>Xem định dạng PDF chuẩn & tải file mẫu</span>
+              </button>
             </div>
             <button
               v-if="sampleExam"
@@ -331,9 +454,11 @@ const handlePublishQuiz = async () => {
 
           <!-- File Upload Box -->
           <div class="border-2 border-dashed border-slate-200 hover:border-ocean-400 rounded-2xl p-6 text-center transition cursor-pointer relative bg-slate-50/50">
-            <input 
-              type="file" 
-              accept=".pdf,.txt"
+            <input
+              type="file"
+              accept=".pdf"
+              data-testid="quiz-pdf-input"
+              :disabled="isReadingPdf"
               @change="handlePdfUpload"
               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
@@ -342,10 +467,10 @@ const handlePublishQuiz = async () => {
                 <FileUp class="w-6 h-6" />
               </div>
               <div class="text-xs font-bold text-slate-700">
-                {{ isReadingPdf ? 'Đang đọc nội dung file PDF...' : uploadFileName ? `Đã chọn: ${uploadFileName}` : 'Nhấn hoặc Kéo thả file PDF đề thi vào đây' }}
+                {{ isReadingPdf ? 'Máy chủ đang đọc & bóc tách file PDF...' : uploadFileName ? `Đã chọn: ${uploadFileName}` : 'Nhấn hoặc Kéo thả file PDF đề thi vào đây' }}
               </div>
               <p class="text-[11px] text-slate-400">
-                Hỗ trợ file PDF hoặc văn bản chứa các câu hỏi Toán
+                PDF xuất từ Word / LaTeX (có thể bôi đen chữ). Tối đa 20MB.
               </p>
             </div>
           </div>
@@ -353,7 +478,7 @@ const handlePublishQuiz = async () => {
           <!-- Textarea Input / Preview -->
           <div class="space-y-1.5">
             <label class="block text-xs font-bold text-slate-700">
-              Nội dung văn bản đề thi (Có thể chỉnh sửa hoặc dán thêm):
+              Hoặc dán nội dung văn bản đề thi (cùng định dạng "Câu 1. … A. … Đáp án: …"):
             </label>
             <textarea
               v-model="rawText"
@@ -370,29 +495,43 @@ const handlePublishQuiz = async () => {
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
             <div>
               <label class="block text-[11px] font-bold text-slate-700 mb-1">Tiêu đề đề thi</label>
-              <input 
-                v-model="quizTitle" 
-                type="text" 
+              <input
+                v-model="quizTitle"
+                type="text"
                 class="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl outline-none"
               />
             </div>
             <div>
               <label class="block text-[11px] font-bold text-slate-700 mb-1">Thời gian làm bài (Phút)</label>
-              <input 
-                v-model.number="durationMinutes" 
-                type="number" 
-                min="5" 
-                max="180" 
+              <input
+                v-model.number="durationMinutes"
+                type="number"
+                min="5"
+                max="180"
                 class="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl outline-none"
               />
             </div>
             <div>
               <label class="block text-[11px] font-bold text-slate-700 mb-1">Hạn nộp bài</label>
-              <input 
-                v-model="dueAt" 
-                type="datetime-local" 
+              <input
+                v-model="dueAt"
+                type="datetime-local"
                 class="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl outline-none"
               />
+            </div>
+          </div>
+
+          <!-- Học sinh đã nộp bài -->
+          <div v-if="hasSubmissions" class="p-3 bg-sky-50 border border-sky-200 rounded-xl text-sky-900 text-xs flex items-start space-x-2">
+            <AlertTriangle class="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span>Đã có học sinh nộp bài nên không thể thêm hoặc xóa câu hỏi. Bạn vẫn sửa được nội dung, phương án và đáp án từng câu (điểm đã chấm sẽ không tự tính lại).</span>
+          </div>
+
+          <!-- Cảnh báo chung từ server -->
+          <div v-if="parseWarnings.length" class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs space-y-1">
+            <div v-for="(w, i) in parseWarnings" :key="i" class="flex items-start space-x-2">
+              <AlertTriangle class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              <span>{{ w }}</span>
             </div>
           </div>
 
@@ -404,23 +543,36 @@ const handlePublishQuiz = async () => {
                 <strong>Mẹo:</strong> Click trực tiếp vào bất kỳ phương án <strong>A, B, C, hoặc D</strong> bên dưới để chọn đáp án đúng ngay trên UI!
               </span>
             </div>
-            <span class="font-bold text-xs">{{ parsedQuestions.length }} câu hỏi</span>
+            <div class="text-right flex-shrink-0 pl-3">
+              <span class="font-bold text-xs">{{ parsedQuestions.length }} câu hỏi</span>
+              <div v-if="missingAnswerCount" class="text-[11px] font-bold text-rose-600">{{ missingAnswerCount }} câu thiếu đáp án</div>
+            </div>
           </div>
 
           <!-- Questions List -->
           <div class="space-y-4">
-            <div 
-              v-for="(q, qIndex) in parsedQuestions" 
+            <div
+              v-for="(q, qIndex) in parsedQuestions"
               :key="qIndex"
-              class="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs space-y-3.5 hover:border-ocean-300 transition"
+              :class="[
+                'p-5 bg-white rounded-2xl border shadow-xs space-y-3.5 transition',
+                questionNeedsAnswer(q) ? 'border-rose-300' : 'border-slate-200/90 hover:border-ocean-300'
+              ]"
             >
               <!-- Question Header -->
               <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-                <div class="flex items-center space-x-3">
+                <div class="flex items-center flex-wrap gap-2">
                   <span class="px-2.5 py-1 rounded-lg bg-ocean-600 text-white font-extrabold text-xs">
                     Câu {{ qIndex + 1 }}
                   </span>
-                  <select 
+                  <select
+                    v-model="q.type"
+                    @change="changeType(q)"
+                    class="text-[11px] font-bold px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 outline-none"
+                  >
+                    <option v-for="t in QUESTION_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+                  </select>
+                  <select
                     v-model="q.difficulty"
                     class="text-[11px] font-bold px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 outline-none"
                   >
@@ -428,9 +580,11 @@ const handlePublishQuiz = async () => {
                     <option value="MEDIUM">Trung bình (Thông hiểu)</option>
                     <option value="HARD">Vận dụng cao</option>
                   </select>
+                  <span v-if="q.groupLabel" class="text-[10px] text-slate-400 truncate max-w-[16rem]" :title="q.groupLabel">{{ q.groupLabel }}</span>
                 </div>
 
-                <button 
+                <button
+                  v-if="!hasSubmissions"
                   @click="removeQuestion(qIndex)"
                   class="text-slate-400 hover:text-rose-600 transition p-1"
                   title="Xóa câu hỏi này"
@@ -439,10 +593,15 @@ const handlePublishQuiz = async () => {
                 </button>
               </div>
 
+              <!-- Cảnh báo riêng của câu -->
+              <div v-if="q.warnings && q.warnings.length" class="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 space-y-0.5">
+                <div v-for="(w, i) in q.warnings" :key="i">⚠ {{ w }}</div>
+              </div>
+
               <!-- Question Content & KaTeX preview -->
               <div class="space-y-1">
                 <label class="block text-[11px] font-bold text-slate-600">Nội dung câu hỏi (Markdown / LaTeX):</label>
-                <textarea 
+                <textarea
                   v-model="q.contentMd"
                   rows="2"
                   class="w-full p-2.5 text-xs font-mono border border-slate-200 rounded-xl focus:ring-1 focus:ring-ocean-500 outline-none"
@@ -453,59 +612,96 @@ const handlePublishQuiz = async () => {
                 </div>
               </div>
 
-              <!-- Interactive 4 Choices (A, B, C, D) -->
-              <div class="space-y-1.5">
+              <!-- Trắc nghiệm: 4 lựa chọn (A, B, C, D) -->
+              <div v-if="q.type === 'MULTIPLE_CHOICE'" class="space-y-1.5">
                 <label class="block text-[11px] font-bold text-slate-600">
                   Các lựa chọn (Click vào thẻ để chọn đáp án đúng):
                 </label>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div 
-                    v-for="choice in q.choices" 
-                    :key="choice.id"
-                    @click="setCorrectAnswer(qIndex, choice.id)"
+                  <div
+                    v-for="choice in q.choices"
+                    :key="choice.key"
+                    @click="setCorrectAnswer(qIndex, choice.key)"
                     :class="[
                       'p-3 rounded-xl border-2 transition cursor-pointer flex items-center space-x-2.5',
-                      q.correctAnswer === choice.id
+                      q.correctAnswer === choice.key
                         ? 'border-emerald-500 bg-emerald-50/80 shadow-xs'
                         : 'border-slate-200 hover:border-slate-300 bg-white'
                     ]"
                   >
                     <!-- Choice Badge -->
-                    <div 
+                    <div
                       :class="[
                         'w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0 transition',
-                        q.correctAnswer === choice.id
+                        q.correctAnswer === choice.key
                           ? 'bg-emerald-600 text-white'
                           : 'bg-slate-100 text-slate-700'
                       ]"
                     >
-                      {{ choice.id }}
+                      {{ choice.key }}
                     </div>
 
                     <!-- Choice Text & Input -->
                     <div class="flex-1 min-w-0" @click.stop>
-                      <input 
-                        v-model="choice.content" 
+                      <input
+                        v-model="choice.text"
                         class="w-full text-xs bg-transparent border-b border-transparent focus:border-slate-300 outline-none font-medium"
                       />
                       <div class="text-[11px] text-slate-600 mt-0.5 pointer-events-none">
-                        <MathRenderer :content="choice.content" />
+                        <MathRenderer :content="choice.text" />
                       </div>
                     </div>
 
                     <!-- Selected Indicator -->
-                    <div v-if="q.correctAnswer === choice.id" class="text-emerald-600 flex-shrink-0">
+                    <div v-if="q.correctAnswer === choice.key" class="text-emerald-600 flex-shrink-0">
                       <CheckCircle2 class="w-4 h-4" />
                     </div>
                   </div>
                 </div>
               </div>
 
+              <!-- Đúng / Sai: 4 ý a) b) c) d) -->
+              <div v-else-if="q.type === 'TRUE_FALSE'" class="space-y-1.5">
+                <label class="block text-[11px] font-bold text-slate-600">Chọn Đúng / Sai cho từng ý a), b), c), d):</label>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div v-for="(label, i) in ['a', 'b', 'c', 'd']" :key="label" class="p-2 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <span class="text-xs font-bold text-slate-700">{{ label }})</span>
+                    <div class="flex space-x-1">
+                      <button
+                        type="button"
+                        @click="setTrueFalse(q, i, 'Đ')"
+                        :class="['px-2 py-0.5 rounded-md text-[11px] font-bold border', tfValues(q)[i] === 'Đ' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200']"
+                      >Đúng</button>
+                      <button
+                        type="button"
+                        @click="setTrueFalse(q, i, 'S')"
+                        :class="['px-2 py-0.5 rounded-md text-[11px] font-bold border', tfValues(q)[i] === 'S' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-600 border-slate-200']"
+                      >Sai</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Trả lời ngắn -->
+              <div v-else-if="q.type === 'SHORT_ANSWER'" class="space-y-1">
+                <label class="block text-[11px] font-bold text-slate-600">Đáp số đúng:</label>
+                <input
+                  v-model="q.correctAnswer"
+                  placeholder="Ví dụ: 5 hoặc -3/2"
+                  class="w-full sm:w-64 px-3 py-1.5 text-xs font-mono border border-slate-200 rounded-xl outline-none"
+                />
+              </div>
+
+              <!-- Tự luận -->
+              <div v-else class="text-[11px] text-slate-500 italic">
+                Câu tự luận: học sinh viết lời giải, giáo viên chấm điểm thủ công.
+              </div>
+
               <!-- Solution Explanation -->
               <div class="pt-1">
                 <label class="block text-[11px] font-bold text-slate-500 mb-1">Lời giải chi tiết:</label>
-                <input 
-                  v-model="q.solutionMd" 
+                <input
+                  v-model="q.solutionMd"
                   placeholder="Nhập hướng dẫn giải (tùy chọn)..."
                   class="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl outline-none"
                 />
@@ -515,6 +711,7 @@ const handlePublishQuiz = async () => {
 
           <!-- Add question button -->
           <button
+            v-if="!hasSubmissions"
             @click="addEmptyQuestion"
             class="w-full py-3 border-2 border-dashed border-slate-300 hover:border-ocean-500 text-slate-600 hover:text-ocean-600 font-bold text-xs rounded-2xl transition flex items-center justify-center space-x-2"
           >
@@ -527,12 +724,20 @@ const handlePublishQuiz = async () => {
 
       <!-- Footer Buttons -->
       <div class="p-6 border-t border-slate-100 flex items-center justify-between flex-shrink-0 bg-slate-50/50 rounded-b-3xl">
-        <div v-if="activeStep === 2">
+        <div v-if="activeStep === 2 && !hasSubmissions">
           <button
             @click="activeStep = 1"
             class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition"
           >
-            ← Quay Lại Nhập Đề
+            ← {{ isEditMode ? 'Nạp Lại Đề Từ PDF' : 'Quay Lại Nhập Đề' }}
+          </button>
+        </div>
+        <div v-else-if="activeStep === 1 && isEditMode">
+          <button
+            @click="activeStep = 2"
+            class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition"
+          >
+            ← Quay Lại Đề Hiện Tại
           </button>
         </div>
         <div v-else></div>
@@ -558,15 +763,17 @@ const handlePublishQuiz = async () => {
           <button
             v-else
             @click="handlePublishQuiz"
-            :disabled="isSubmitting || parsedQuestions.length === 0"
+            :disabled="isSubmitting || isLoadingExisting || parsedQuestions.length === 0"
             class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center space-x-2"
           >
             <Check class="w-4 h-4" />
-            <span>{{ isSubmitting ? 'Đang Xuất Bản...' : 'Lưu & Xuất Bản Cho Lớp' }}</span>
+            <span>{{ isSubmitting ? 'Đang Lưu...' : (isEditMode ? 'Lưu Thay Đổi Bài Kiểm Tra' : 'Lưu & Xuất Bản Cho Lớp') }}</span>
           </button>
         </div>
       </div>
 
     </div>
+
+    <PdfTemplateGuide v-if="showGuide" @close="showGuide = false" />
   </div>
 </template>

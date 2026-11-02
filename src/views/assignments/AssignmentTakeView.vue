@@ -75,6 +75,21 @@ const setTextAnswer = (value) => {
   localStorage.setItem(`bienedu_exam_${assignmentId}`, JSON.stringify(answers.value))
 }
 
+// Đúng/Sai 4 ý: đáp án lưu dạng "Đ,S,Đ,S" (ý chưa chọn để trống)
+const tfValues = (exerciseId) => {
+  const parts = String(answers.value[exerciseId] || '').split(',')
+  return [0, 1, 2, 3].map(i => parts[i] || '')
+}
+
+const setTrueFalse = (index, value) => {
+  if (!currentExercise.value) return
+  const id = currentExercise.value.id
+  const next = tfValues(id)
+  next[index] = value
+  answers.value[id] = next.join(',')
+  localStorage.setItem(`bienedu_exam_${assignmentId}`, JSON.stringify(answers.value))
+}
+
 const handleSubmit = async () => {
   isSubmitting.value = true
   try {
@@ -159,7 +174,7 @@ const handleSubmit = async () => {
           Câu {{ currentIndex + 1 }}
         </span>
         <span class="text-xs text-slate-400">
-          {{ currentExercise.type === 'MULTIPLE_CHOICE' ? 'Trắc nghiệm 4 lựa chọn' : 'Điền đáp số' }}
+          {{ { MULTIPLE_CHOICE: 'Trắc nghiệm 4 lựa chọn', TRUE_FALSE: 'Đúng / Sai 4 ý', ESSAY: 'Tự luận' }[currentExercise.type] || 'Điền đáp số' }}
         </span>
       </div>
 
@@ -193,6 +208,26 @@ const handleSubmit = async () => {
             <MathRenderer :content="c.text" />
           </div>
         </button>
+      </div>
+
+      <!-- Đúng / Sai: chọn cho từng ý a), b), c), d) -->
+      <div v-else-if="currentExercise.type === 'TRUE_FALSE'" class="pt-2 space-y-2" data-testid="true-false-answer">
+        <label class="block text-xs font-semibold text-slate-600">Chọn Đúng hoặc Sai cho từng ý:</label>
+        <div v-for="(label, i) in ['a', 'b', 'c', 'd']" :key="label" class="flex items-center justify-between p-3 rounded-xl border border-slate-200">
+          <span class="text-sm font-bold text-slate-700">Ý {{ label }})</span>
+          <div class="flex space-x-2">
+            <button
+              type="button"
+              @click="setTrueFalse(i, 'Đ')"
+              :class="['px-4 py-1.5 rounded-lg text-xs font-bold border cursor-pointer', tfValues(currentExercise.id)[i] === 'Đ' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50']"
+            >Đúng</button>
+            <button
+              type="button"
+              @click="setTrueFalse(i, 'S')"
+              :class="['px-4 py-1.5 rounded-lg text-xs font-bold border cursor-pointer', tfValues(currentExercise.id)[i] === 'S' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50']"
+            >Sai</button>
+          </div>
+        </div>
       </div>
 
       <!-- Short Answer Input -->

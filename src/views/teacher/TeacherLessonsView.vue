@@ -6,18 +6,20 @@ import { GRADES } from '@/constants/grades'
 import MathRenderer from '@/components/MathRenderer.vue'
 import SmartPdfQuizModal from '@/components/SmartPdfQuizModal.vue'
 import LessonTrackingModal from '@/components/LessonTrackingModal.vue'
-import { 
-  BookOpen, 
-  Plus, 
-  FileText, 
-  Upload, 
-  Sparkles, 
-  BarChart3, 
-  Clock, 
-  Trash2, 
-  Edit3, 
-  ExternalLink, 
-  CheckCircle2, 
+import PdfTemplateGuide from '@/components/PdfTemplateGuide.vue'
+import { outlineToMarkdown, questionsToMarkdown } from '@/utils/pdfImportMarkdown'
+import {
+  BookOpen,
+  Plus,
+  FileText,
+  Upload,
+  Sparkles,
+  BarChart3,
+  Clock,
+  Trash2,
+  Edit3,
+  ExternalLink,
+  CheckCircle2,
   AlertCircle,
   FileCheck,
   HelpCircle,
@@ -57,6 +59,17 @@ const isUploadingTheory = ref(false)
 const isUploadingExercise = ref(false)
 const isSubmitting = ref(false)
 
+// null = đang tạo bài học mới; có giá trị = đang sửa bài học đó
+const editingLessonId = ref(null)
+const isEditing = computed(() => editingLessonId.value !== null)
+const showGuide = ref(false)
+
+// Kết quả bóc tách PDF hiển thị ngay dưới từng phần (theory / exercise)
+const theoryParseInfo = ref('')
+const exerciseParseInfo = ref('')
+const parsedExerciseQuestions = ref([])
+const includeAnswers = ref(true)
+
 // Chọn lớp nào thì khối lớp của bài học theo khối của lớp đó (không mặc định lớp 12)
 watch(() => form.value.classId, (id) => {
   const c = classes.value.find(x => x.id === id)
@@ -93,46 +106,150 @@ const filteredLessons = computed(() => {
   return lessons.value.filter(l => l.classId === Number(selectedClassId.value))
 })
 
-// Upload PDF Lý thuyết
+// Upload file PDF rồi để máy chủ bóc tách nội dung (tải lên và bóc tách chạy song song)
+const uploadAndParse = async (file, kind) => {
+  const [uploadRes, parseRes] = await Promise.allSettled([
+    lessonService.uploadFile(file),
+    lessonService.parsePdf({ file, kind })
+  ])
+  if (uploadRes.status === 'rejected') throw uploadRes.reason
+  const uploaded = uploadRes.value.data || uploadRes.value
+  const parsed = parseRes.status === 'fulfilled' ? (parseRes.value.data || parseRes.value) : null
+  const parseError = parseRes.status === 'rejected'
+    ? (parseRes.reason?.detail || parseRes.reason?.message || 'không đọc được nội dung')
+    : ''
+  return { uploaded, parsed, parseError }
+}
+
+// Chỉ ghi đè ô nội dung khi trống hoặc giáo viên đồng ý
+const fillContent = (current, generated, label) => {
+  if (!generated) return current
+  if (current && current.trim() && current.trim() !== generated.trim()) {
+    if (!confirm(`Ô "${label}" đang có nội dung. Thay bằng nội dung vừa bóc tách từ PDF?`)) return current
+  }
+  return generated
+}
+
+// Upload PDF Lý thuyết -> bóc tách mục lục chuyên đề / dạng bài
 const handleUploadTheoryPdf = async (event) => {
   const file = event.target.files[0]
+  event.target.value = ''
   if (!file) return
 
   isUploadingTheory.value = true
   errorMessage.value = ''
+  theoryParseInfo.value = ''
   try {
-    const res = await lessonService.uploadFile(file)
-    const data = res.data || res
-    form.value.theoryFileName = data.fileName || file.name
-    form.value.theoryFileUrl = data.fileUrl
+    const { uploaded, parsed, parseError } = await uploadAndParse(file, 'THEORY')
+    form.value.theoryFileName = uploaded.fileName || file.name
+    form.value.theoryFileUrl = uploaded.fileUrl
+
+    if (parsed?.outline?.length) {
+      const topics = parsed.outline.reduce((n, c) => n + (c.children?.length || 0), 0)
+      const examples = parsed.outline.reduce((n, c) => n + (c.questionCount || 0), 0)
+      theoryParseInfo.value = `Đã bóc tách ${parsed.outline.length} chuyên đề, ${topics} dạng bài${examples ? `, ${examples} ví dụ` : ''} từ ${parsed.pageCount} trang.`
+      form.value.theoryContentMd = fillContent(form.value.theoryContentMd, outlineToMarkdown(parsed.outline), 'Tóm tắt lý thuyết')
+    } else {
+      theoryParseInfo.value = parseError
+        ? `Đã lưu file, nhưng chưa bóc tách được: ${parseError}`
+        : (parsed?.warnings?.[0] || 'Đã lưu file PDF.')
+    }
   } catch (err) {
-    errorMessage.value = 'Lỗi tải lên file PDF Lý thuyết: ' + (err.message || 'Thử lại sau.')
+    errorMessage.value = 'Lỗi tải lên file PDF Lý thuyết: ' + (err.detail || err.message || 'Thử lại sau.')
   } finally {
     isUploadingTheory.value = false
   }
 }
 
-// Upload PDF Bài tập
+const exerciseMarkdown = () => questionsToMarkdown(parsedExerciseQuestions.value, { withAnswers: includeAnswers.value })
+
+// Đổi tùy chọn "kèm đáp án" thì dựng lại nội dung từ các câu đã bóc tách
+const handleToggleAnswers = () => {
+  if (parsedExerciseQuestions.value.length) form.value.exerciseContentMd = exerciseMarkdown()
+}
+
+// Upload PDF Bài tập -> bóc tách câu hỏi, đáp án, lời giải
 const handleUploadExercisePdf = async (event) => {
   const file = event.target.files[0]
+  event.target.value = ''
   if (!file) return
 
   isUploadingExercise.value = true
   errorMessage.value = ''
+  exerciseParseInfo.value = ''
   try {
-    const res = await lessonService.uploadFile(file)
-    const data = res.data || res
-    form.value.exerciseFileName = data.fileName || file.name
-    form.value.exerciseFileUrl = data.fileUrl
+    const { uploaded, parsed, parseError } = await uploadAndParse(file, 'EXERCISE')
+    form.value.exerciseFileName = uploaded.fileName || file.name
+    form.value.exerciseFileUrl = uploaded.fileUrl
+
+    if (parsed?.questions?.length) {
+      parsedExerciseQuestions.value = parsed.questions
+      const warned = parsed.questions.filter(q => q.warnings?.length).length
+      exerciseParseInfo.value = `Đã bóc tách ${parsed.questions.length} câu hỏi (${parsed.questionsWithAnswer} có đáp án, ${parsed.questionsWithSolution} có lời giải)`
+        + (warned ? ` — ${warned} câu cần kiểm tra lại.` : '.')
+      form.value.exerciseContentMd = fillContent(form.value.exerciseContentMd, exerciseMarkdown(), 'Ghi chú & yêu cầu tự luyện')
+    } else {
+      parsedExerciseQuestions.value = []
+      exerciseParseInfo.value = parseError
+        ? `Đã lưu file, nhưng chưa bóc tách được: ${parseError}`
+        : (parsed?.warnings?.[0] || 'Đã lưu file PDF.')
+    }
   } catch (err) {
-    errorMessage.value = 'Lỗi tải lên file PDF Bài tập: ' + (err.message || 'Thử lại sau.')
+    errorMessage.value = 'Lỗi tải lên file PDF Bài tập: ' + (err.detail || err.message || 'Thử lại sau.')
   } finally {
     isUploadingExercise.value = false
   }
 }
 
-// Submit tạo bài học
-const handleCreateLesson = async () => {
+// Gỡ file PDF đã đính kèm (khi sửa bài học)
+const clearTheoryFile = () => {
+  form.value.theoryFileName = ''
+  form.value.theoryFileUrl = ''
+  theoryParseInfo.value = ''
+}
+const clearExerciseFile = () => {
+  form.value.exerciseFileName = ''
+  form.value.exerciseFileUrl = ''
+  exerciseParseInfo.value = ''
+  parsedExerciseQuestions.value = []
+}
+
+const openCreateModal = () => {
+  editingLessonId.value = null
+  resetForm()
+  errorMessage.value = ''
+  showCreateModal.value = true
+}
+
+const openEditModal = (lesson) => {
+  editingLessonId.value = lesson.id
+  errorMessage.value = ''
+  theoryParseInfo.value = ''
+  exerciseParseInfo.value = ''
+  parsedExerciseQuestions.value = []
+  form.value = {
+    classId: lesson.classId,
+    title: lesson.title || '',
+    description: lesson.description || '',
+    gradeLevel: lesson.gradeLevel || '',
+    orderIndex: lesson.orderIndex ?? 0,
+    theoryFileName: lesson.theoryFileName || '',
+    theoryFileUrl: lesson.theoryFileUrl || '',
+    theoryContentMd: lesson.theoryContentMd || '',
+    exerciseFileName: lesson.exerciseFileName || '',
+    exerciseFileUrl: lesson.exerciseFileUrl || '',
+    exerciseContentMd: lesson.exerciseContentMd || ''
+  }
+  showCreateModal.value = true
+}
+
+const closeLessonModal = () => {
+  showCreateModal.value = false
+  editingLessonId.value = null
+}
+
+// Lưu bài học: tạo mới hoặc cập nhật
+const handleSaveLesson = async () => {
   if (!form.value.classId) {
     errorMessage.value = 'Vui lòng chọn lớp học áp dụng.'
     return
@@ -145,26 +262,31 @@ const handleCreateLesson = async () => {
   isSubmitting.value = true
   errorMessage.value = ''
 
-  try {
-    await lessonService.createLesson({
-      classId: form.value.classId,
-      title: form.value.title.trim(),
-      description: form.value.description.trim(),
-      gradeLevel: form.value.gradeLevel || undefined,
-      theoryFileName: form.value.theoryFileName,
-      theoryFileUrl: form.value.theoryFileUrl,
-      theoryContentMd: form.value.theoryContentMd,
-      exerciseFileName: form.value.exerciseFileName,
-      exerciseFileUrl: form.value.exerciseFileUrl,
-      exerciseContentMd: form.value.exerciseContentMd
-    })
+  const payload = {
+    title: form.value.title.trim(),
+    description: form.value.description.trim(),
+    gradeLevel: form.value.gradeLevel || undefined,
+    theoryFileName: form.value.theoryFileName,
+    theoryFileUrl: form.value.theoryFileUrl,
+    theoryContentMd: form.value.theoryContentMd,
+    exerciseFileName: form.value.exerciseFileName,
+    exerciseFileUrl: form.value.exerciseFileUrl,
+    exerciseContentMd: form.value.exerciseContentMd
+  }
 
-    actionMessage.value = 'Tạo bài học & tài liệu PDF thành công!'
-    showCreateModal.value = false
+  try {
+    if (isEditing.value) {
+      await lessonService.updateLesson(editingLessonId.value, payload)
+      actionMessage.value = 'Đã cập nhật bài học & tài liệu PDF thành công!'
+    } else {
+      await lessonService.createLesson({ classId: form.value.classId, ...payload })
+      actionMessage.value = 'Tạo bài học & tài liệu PDF thành công!'
+    }
+    closeLessonModal()
     resetForm()
     await loadData()
   } catch (err) {
-    errorMessage.value = err.detail || err.message || 'Lỗi khi tạo bài học.'
+    errorMessage.value = err.detail || err.message || (isEditing.value ? 'Lỗi khi cập nhật bài học.' : 'Lỗi khi tạo bài học.')
   } finally {
     isSubmitting.value = false
   }
@@ -192,11 +314,16 @@ const openTrackingModal = (lesson) => {
 }
 
 const handleQuizCreated = async () => {
-  actionMessage.value = 'Đã xuất bản bài kiểm tra thành công cho lớp học!'
+  actionMessage.value = activeLesson.value?.quizAssignmentId
+    ? 'Đã lưu thay đổi bài kiểm tra thành công!'
+    : 'Đã xuất bản bài kiểm tra thành công cho lớp học!'
   await loadData()
 }
 
 const resetForm = () => {
+  theoryParseInfo.value = ''
+  exerciseParseInfo.value = ''
+  parsedExerciseQuestions.value = []
   form.value = {
     classId: classes.value.length > 0 ? classes.value[0].id : '',
     title: '',
@@ -233,7 +360,7 @@ onMounted(loadData)
       </div>
 
       <button
-        @click="showCreateModal = true"
+        @click="openCreateModal"
         data-testid="add-lesson-btn"
         class="px-5 py-2.5 bg-white text-ocean-800 hover:bg-ocean-50 font-bold text-xs rounded-xl shadow transition flex items-center space-x-2 flex-shrink-0"
       >
@@ -286,7 +413,7 @@ onMounted(loadData)
         Hãy bắt đầu bằng cách tải lên file PDF Lý thuyết & Bài tập tự luyện, sau đó dùng công cụ bóc tách PDF để tạo đề thi cho lớp.
       </p>
       <button
-        @click="showCreateModal = true"
+        @click="openCreateModal"
         class="inline-flex items-center space-x-1.5 px-4 py-2 bg-ocean-600 hover:bg-ocean-700 text-white font-bold text-xs rounded-xl shadow transition"
       >
         <Plus class="w-4 h-4" />
@@ -296,8 +423,8 @@ onMounted(loadData)
 
     <!-- Lessons List -->
     <div v-else class="space-y-6">
-      <div 
-        v-for="lesson in filteredLessons" 
+      <div
+        v-for="lesson in filteredLessons"
         :key="lesson.id"
         class="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 sm:p-7 space-y-5 hover:border-ocean-300 transition"
       >
@@ -323,6 +450,14 @@ onMounted(loadData)
           <!-- Top Action Buttons -->
           <div class="flex items-center space-x-2 flex-shrink-0">
             <button
+              @click="openEditModal(lesson)"
+              data-testid="edit-lesson-btn"
+              class="p-2 text-slate-400 hover:text-ocean-600 rounded-xl hover:bg-ocean-50 transition"
+              title="Sửa bài học & tài liệu PDF"
+            >
+              <Edit3 class="w-4 h-4" />
+            </button>
+            <button
               @click="handleDeleteLesson(lesson.id)"
               class="p-2 text-slate-400 hover:text-rose-600 rounded-xl hover:bg-rose-50 transition"
               title="Xóa bài học"
@@ -334,7 +469,7 @@ onMounted(loadData)
 
         <!-- 3-Column Structured Breakdown: Theory | Exercise | Quiz -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
-          
+
           <!-- PHẦN 1: Lý Thuyết (Theory PDF) -->
           <div class="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 space-y-3 flex flex-col justify-between">
             <div class="space-y-2">
@@ -417,7 +552,7 @@ onMounted(loadData)
                   <Sparkles class="w-3.5 h-3.5 text-amber-600" />
                   <span>3. Bài Kiểm Tra Lý Thuyết</span>
                 </span>
-                <span 
+                <span
                   :class="[
                     'text-[10px] font-bold px-2 py-0.5 rounded',
                     lesson.quizAssignmentId ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
@@ -459,6 +594,16 @@ onMounted(loadData)
               </button>
 
               <button
+                v-if="lesson.quizAssignmentId"
+                @click="openSmartQuizModal(lesson)"
+                data-testid="edit-quiz-btn"
+                class="w-full py-2 px-3 bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 transition cursor-pointer"
+              >
+                <Edit3 class="w-3.5 h-3.5" />
+                <span>Sửa Bài Kiểm Tra</span>
+              </button>
+
+              <button
                 v-else
                 @click="openSmartQuizModal(lesson)"
                 class="w-full py-2 px-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 transition shadow-xs cursor-pointer"
@@ -478,10 +623,13 @@ onMounted(loadData)
       <div class="bg-white rounded-3xl max-w-3xl w-full my-8 shadow-2xl border border-slate-200/90 flex flex-col max-h-[90vh]">
         <div class="p-6 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
           <div>
-            <h3 class="text-lg font-bold text-slate-900">Thêm Bài Học & Tài Liệu PDF Mới</h3>
-            <p class="text-xs text-slate-500">Đưa bài giảng riêng biệt 2 phần Lý thuyết & Bài tập và gán cho lớp học</p>
+            <h3 class="text-lg font-bold text-slate-900">{{ isEditing ? 'Chỉnh Sửa Bài Học & Tài Liệu PDF' : 'Thêm Bài Học & Tài Liệu PDF Mới' }}</h3>
+            <p class="text-xs text-slate-500">
+              {{ isEditing ? 'Đổi thông tin, thay file PDF hoặc sửa nội dung đã bóc tách.' : 'Chỉ cần chọn file PDF — máy chủ tự bóc tách nội dung, bạn xem lại và chỉnh sửa trước khi lưu.' }}
+              <button type="button" data-testid="open-pdf-guide-lesson" @click="showGuide = true" class="ml-1 font-bold text-ocean-700 hover:text-ocean-900 underline underline-offset-2">Xem định dạng PDF chuẩn</button>
+            </p>
           </div>
-          <button @click="showCreateModal = false" class="text-slate-400 hover:text-slate-600">
+          <button @click="closeLessonModal" class="text-slate-400 hover:text-slate-600">
             <X class="w-5 h-5" />
           </button>
         </div>
@@ -496,9 +644,11 @@ onMounted(loadData)
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">Gán cho lớp học *</label>
-              <select 
-                v-model="form.classId" 
-                class="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none"
+              <select
+                v-model="form.classId"
+                :disabled="isEditing"
+                :title="isEditing ? 'Không đổi được lớp của bài học đã tạo' : ''"
+                class="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none disabled:opacity-60"
               >
                 <option v-for="c in classes" :key="c.id" :value="c.id">
                   {{ c.name }} (Khối {{ c.gradeLevel }})
@@ -507,8 +657,8 @@ onMounted(loadData)
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">Khối lớp</label>
-              <select 
-                v-model.number="form.gradeLevel" 
+              <select
+                v-model.number="form.gradeLevel"
                 data-testid="lesson-grade"
                 class="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none"
               >
@@ -519,9 +669,9 @@ onMounted(loadData)
 
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">Tiêu đề bài học *</label>
-            <input 
-              v-model="form.title" 
-              type="text" 
+            <input
+              v-model="form.title"
+              type="text"
               placeholder="Ví dụ: Chuyên đề 1: Đạo hàm & Khảo sát hàm số nâng cao"
               class="w-full px-3.5 py-2.5 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-ocean-500"
             />
@@ -529,9 +679,9 @@ onMounted(loadData)
 
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">Mô tả bài học</label>
-            <textarea 
-              v-model="form.description" 
-              rows="2" 
+            <textarea
+              v-model="form.description"
+              rows="2"
               placeholder="Tóm tắt nội dung bài học..."
               class="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl outline-none"
             ></textarea>
@@ -554,19 +704,21 @@ onMounted(loadData)
                 <span>{{ isUploadingTheory ? 'Đang tải lên...' : 'Chọn File PDF Lý Thuyết' }}</span>
                 <input type="file" accept=".pdf" @change="handleUploadTheoryPdf" class="hidden" />
               </label>
-              <input 
-                v-model="form.theoryFileUrl" 
-                type="text" 
+              <input
+                v-model="form.theoryFileUrl"
+                type="text"
                 placeholder="Hoặc dán URL file PDF lý thuyết..."
                 class="flex-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl outline-none"
               />
+              <button v-if="form.theoryFileUrl" type="button" @click="clearTheoryFile" class="text-[11px] font-bold text-rose-600 hover:text-rose-800 flex-shrink-0">Gỡ file</button>
             </div>
+            <p v-if="theoryParseInfo" data-testid="theory-parse-info" class="text-[11px] font-semibold text-ocean-800 bg-ocean-100/70 rounded-lg px-2.5 py-1.5">✨ {{ theoryParseInfo }}</p>
 
             <div>
               <label class="block text-[11px] font-semibold text-slate-600 mb-1">Tóm tắt công thức lý thuyết (Hỗ trợ $formula$ KaTeX):</label>
-              <textarea 
-                v-model="form.theoryContentMd" 
-                rows="2" 
+              <textarea
+                v-model="form.theoryContentMd"
+                rows="2"
                 placeholder="Ví dụ: Công thức đạo hàm: $(u \cdot v)' = u'v + uv'$"
                 class="w-full p-2.5 text-xs bg-white border border-slate-200 rounded-xl outline-none"
               ></textarea>
@@ -590,43 +742,57 @@ onMounted(loadData)
                 <span>{{ isUploadingExercise ? 'Đang tải lên...' : 'Chọn File PDF Bài Tập' }}</span>
                 <input type="file" accept=".pdf" @change="handleUploadExercisePdf" class="hidden" />
               </label>
-              <input 
-                v-model="form.exerciseFileUrl" 
-                type="text" 
+              <input
+                v-model="form.exerciseFileUrl"
+                type="text"
                 placeholder="Hoặc dán URL file PDF bài tập..."
                 class="flex-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl outline-none"
               />
+              <button v-if="form.exerciseFileUrl" type="button" @click="clearExerciseFile" class="text-[11px] font-bold text-rose-600 hover:text-rose-800 flex-shrink-0">Gỡ file</button>
+            </div>
+            <div v-if="exerciseParseInfo" class="space-y-1.5">
+              <p data-testid="exercise-parse-info" class="text-[11px] font-semibold text-indigo-800 bg-indigo-100/70 rounded-lg px-2.5 py-1.5">✨ {{ exerciseParseInfo }}</p>
+              <label v-if="parsedExerciseQuestions.length" class="flex items-center space-x-2 text-[11px] font-semibold text-slate-700 cursor-pointer">
+                <input type="checkbox" v-model="includeAnswers" @change="handleToggleAnswers" class="rounded border-slate-300" />
+                <span>Kèm đáp án & lời giải trong nội dung (học sinh sẽ nhìn thấy)</span>
+              </label>
             </div>
 
             <div>
               <label class="block text-[11px] font-semibold text-slate-600 mb-1">Ghi chú & yêu cầu tự luyện:</label>
-              <textarea 
-                v-model="form.exerciseContentMd" 
-                rows="2" 
+              <textarea
+                v-model="form.exerciseContentMd"
+                rows="2"
                 placeholder="Ví dụ: Hoàn thành bài 1 đến bài 10 trong file PDF trước thứ Bảy..."
                 class="w-full p-2.5 text-xs bg-white border border-slate-200 rounded-xl outline-none"
               ></textarea>
+              <div v-if="parsedExerciseQuestions.length && form.exerciseContentMd" class="mt-2 p-2.5 bg-white rounded-xl border border-slate-100 text-[11px] text-slate-700 max-h-48 overflow-y-auto">
+                <span class="text-[10px] uppercase font-bold text-slate-400 block mb-1">Xem trước:</span>
+                <MathRenderer :content="form.exerciseContentMd" />
+              </div>
             </div>
           </div>
         </div>
 
         <div class="p-6 border-t border-slate-100 flex justify-end space-x-3 flex-shrink-0 bg-slate-50/50 rounded-b-3xl">
-          <button 
-            @click="showCreateModal = false"
+          <button
+            @click="closeLessonModal"
             class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-xl"
           >
             Hủy
           </button>
-          <button 
-            @click="handleCreateLesson"
-            :disabled="isSubmitting"
+          <button
+            @click="handleSaveLesson"
+            :disabled="isSubmitting || isUploadingTheory || isUploadingExercise"
             class="px-6 py-2.5 bg-ocean-600 hover:bg-ocean-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition"
           >
-            {{ isSubmitting ? 'Đang Lưu...' : 'Lưu Bài Học & Gán Cho Lớp' }}
+            {{ isSubmitting ? 'Đang Lưu...' : (isEditing ? 'Lưu Thay Đổi' : 'Lưu Bài Học & Gán Cho Lớp') }}
           </button>
         </div>
       </div>
     </div>
+
+    <PdfTemplateGuide v-if="showGuide" @close="showGuide = false" />
 
     <!-- MODAL SMART PDF PARSER -->
     <SmartPdfQuizModal
