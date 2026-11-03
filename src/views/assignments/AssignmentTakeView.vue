@@ -14,13 +14,14 @@ const assignment = ref(null)
 const exercises = ref([])
 const currentIndex = ref(0)
 const answers = ref({}) // map { exerciseId: studentAnswer }
-const remainingSeconds = ref(45 * 60) // 45 minutes
+const remainingSeconds = ref(45 * 60) // mặc định 45 phút, ghi đè bằng durationMinutes của đề
 const timer = ref(null)
 const isLoading = ref(true)
 const isSubmitting = ref(false)
 const showConfirmModal = ref(false)
 
 const currentExercise = computed(() => exercises.value[currentIndex.value] || null)
+const choicesOf = (ex) => ex?.choicesJson || ex?.choices || []
 
 const formatTime = (secs) => {
   const m = Math.floor(secs / 60)
@@ -36,6 +37,12 @@ onMounted(async () => {
     
     assignment.value = assignRes.data || assignRes
     exercises.value = assignment.value?.exercises || []
+
+    const totalSeconds = (assignment.value?.durationMinutes || 45) * 60
+    const startedAt = (startRes?.data || startRes)?.createdAt
+    const elapsed = startedAt ? Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000) : 0
+    // Lệch múi giờ giữa máy chủ và trình duyệt cho ra số vô lý: khi đó tính lại từ đầu thay vì nộp bài oan
+    remainingSeconds.value = elapsed >= 0 && elapsed < totalSeconds ? totalSeconds - elapsed : totalSeconds
 
     // Khôi phục câu trả lời từ localStorage nếu có
     const saved = localStorage.getItem(`bienedu_exam_${assignmentId}`)
@@ -180,13 +187,13 @@ const handleSubmit = async () => {
 
       <!-- Content -->
       <div class="text-base text-slate-800 leading-relaxed font-medium">
-        <MathRenderer :content="currentExercise.content" />
+        <MathRenderer :content="currentExercise.contentMd || currentExercise.content" />
       </div>
 
       <!-- Multiple Choice Options -->
-      <div v-if="currentExercise.choices && currentExercise.choices.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+      <div v-if="choicesOf(currentExercise).length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
         <button
-          v-for="c in currentExercise.choices"
+          v-for="c in choicesOf(currentExercise)"
           :key="c.key"
           @click="selectChoice(c.key)"
           :class="[

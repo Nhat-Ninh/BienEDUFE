@@ -5,6 +5,8 @@ import { classService } from '@/services/classService'
 import { mistakeService } from '@/services/mistakeService'
 import { analyticsService } from '@/services/analyticsService'
 import { assignmentService } from '@/services/assignmentService'
+import { lessonService } from '@/services/lessonService'
+import { percent } from '@/utils/studyState'
 import MathRenderer from '@/components/MathRenderer.vue'
 import { gradeLabel } from '@/constants/grades'
 import { 
@@ -29,6 +31,32 @@ const dueMistakes = ref([])
 const enrolledClasses = ref([])
 const skillMap = ref(null)
 const myAssignments = ref([])
+
+// Bài học giáo viên giao cho các lớp đã tham gia, ưu tiên bài đang học dở rồi tới bài chưa học
+const studyLessons = ref([])
+const lessonProgress = (lesson) => {
+  const p = lesson.studentProgress || {}
+  const quizDone = ['SUBMITTED', 'GRADED'].includes(lesson.studentSubmissionStatus)
+  const parts = []
+  if (p.theoryTotal > 0) parts.push(percent(p.theoryDone, p.theoryTotal))
+  if (p.practiceTotal > 0) parts.push(percent(p.practiceAnswered, p.practiceTotal))
+  if (lesson.quizAssignmentId) parts.push(quizDone ? 100 : 0)
+  return parts.length ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : 0
+}
+const loadStudyLessons = async (classes) => {
+  const results = await Promise.allSettled(classes.slice(0, 5).map(c => lessonService.getLessonsForClass(c.id)))
+  const all = []
+  results.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return
+    for (const l of (r.value.data || r.value || [])) {
+      all.push({ ...l, className: l.className || classes[i].name, percent: lessonProgress(l), started: !!l.studentProgress?.lastStudiedAt })
+    }
+  })
+  studyLessons.value = all
+    .filter(l => l.percent < 100)
+    .sort((a, b) => Number(b.started) - Number(a.started) || b.percent - a.percent)
+    .slice(0, 3)
+}
 const weeklyReport = ref(null)
 const isLoading = ref(true)
 
@@ -71,6 +99,7 @@ onMounted(async () => {
 
       if (dueRes.status === 'fulfilled') dueMistakes.value = dueRes.value.data || dueRes.value || []
       if (classRes.status === 'fulfilled') enrolledClasses.value = classRes.value.data?.content || classRes.value.content || []
+      loadStudyLessons(enrolledClasses.value)
       if (skillRes.status === 'fulfilled') skillMap.value = skillRes.value.data || skillRes.value || null
       if (assignRes.status === 'fulfilled') myAssignments.value = assignRes.value.data?.content || assignRes.value.content || []
       if (reportRes.status === 'fulfilled') weeklyReport.value = reportRes.value.data || reportRes.value || null
@@ -238,6 +267,34 @@ onMounted(async () => {
           <div class="text-[11px] text-slate-400 mt-0.5">
             {{ weeklyReport && weeklyReport.totalExercisesDone > 0 ? (weeklyReport.accuracyPercent >= 80 ? 'Mức độ: Tốt' : 'Đang rèn luyện') : 'Chưa có dữ liệu bài làm' }}
           </div>
+        </div>
+      </div>
+
+      <!-- Tiếp tục học: bài học giáo viên đã giao -->
+      <div v-if="studyLessons.length > 0" class="space-y-3" data-testid="continue-learning">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-extrabold text-slate-900">Tiếp tục học</h2>
+          <router-link to="/app/classes" class="text-xs font-semibold text-ocean-600 hover:underline">Tất cả lớp học</router-link>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <router-link
+            v-for="l in studyLessons"
+            :key="l.id"
+            :to="`/app/lessons/${l.id}`"
+            class="group bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm hover:border-ocean-300 hover:shadow-md transition space-y-3"
+          >
+            <div class="flex items-center justify-between text-[11px] font-bold">
+              <span class="px-2 py-0.5 rounded-full bg-ocean-50 text-ocean-700 truncate max-w-[10rem]">{{ l.className }}</span>
+              <span class="text-slate-400">{{ l.percent }}%</span>
+            </div>
+            <h3 class="text-sm font-extrabold text-slate-900 leading-snug line-clamp-2">{{ l.title }}</h3>
+            <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div class="h-full rounded-full bg-gradient-to-r from-ocean-500 to-emerald-500" :style="{ width: l.percent + '%' }"></div>
+            </div>
+            <span class="inline-flex items-center space-x-1 text-xs font-bold text-ocean-700 group-hover:underline">
+              <span>{{ l.started ? 'Học tiếp' : 'Bắt đầu học' }}</span><ArrowRight class="w-3.5 h-3.5" />
+            </span>
+          </router-link>
         </div>
       </div>
 

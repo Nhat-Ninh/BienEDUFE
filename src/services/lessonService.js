@@ -13,6 +13,8 @@ export const lessonService = {
   updateQuizForLesson: (id, quizData) => api.put(`/api/v1/lessons/${id}/quiz`, quizData),
   attachAssignment: (id, assignmentId) => api.post(`/api/v1/lessons/${id}/attach-assignment/${assignmentId}`),
   getLessonTracking: (id) => api.get(`/api/v1/lessons/${id}/tracking`),
+  // Học sinh lưu tiến độ học (số mục lý thuyết đã hiểu, kết quả luyện tập)
+  updateProgress: (id, progress) => api.put(`/api/v1/lessons/${id}/progress`, progress),
   uploadFile: (file) => {
     const formData = new FormData()
     formData.append('file', file)

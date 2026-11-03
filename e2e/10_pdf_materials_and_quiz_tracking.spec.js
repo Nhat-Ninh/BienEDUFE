@@ -31,11 +31,11 @@ test.describe('10. PDF Course Materials, Smart Exam Parser & Quiz Tracking (Tài
     await page.fill('textarea[placeholder*="Tóm tắt nội dung bài học"]', 'Bài học cung cấp nền tảng đạo hàm và 10 bài tập tự luyện kèm đề kiểm tra 15 phút.')
 
     // Phần 1: Lý Thuyết
-    await page.fill('input[placeholder*="Hoặc dán URL file PDF lý thuyết"]', '/api/v1/files/download/demo_theory.pdf')
+    await page.fill('input[placeholder*="Hoặc dán đường dẫn http(s) của file lý thuyết"]', '/api/v1/files/download/demo_theory.pdf')
     await page.fill('textarea[placeholder*="Công thức đạo hàm"]', 'Công thức đạo hàm hàm hợp: $(f(u))\' = u\' \\cdot f\'(u)$')
 
     // Phần 2: Bài Tập
-    await page.fill('input[placeholder*="Hoặc dán URL file PDF bài tập"]', '/api/v1/files/download/demo_exercise.pdf')
+    await page.fill('input[placeholder*="Hoặc dán đường dẫn http(s) của file bài tập"]', '/api/v1/files/download/demo_exercise.pdf')
     await page.fill('textarea[placeholder*="Hoàn thành bài 1"]', 'Làm các câu từ 1 đến 10 trong file PDF trước thứ Bảy.')
 
     // Bấm Lưu bài học
@@ -109,11 +109,17 @@ test.describe('10. PDF Course Materials, Smart Exam Parser & Quiz Tracking (Tài
       await page.click('[data-testid="tab-lessons"]')
 
       // Học sinh thấy bài học có 3 phần
-      await expect(page.locator('text=1. Lý Thuyết')).toBeVisible()
-      await expect(page.locator('text=2. Bài Tập Tự Luyện')).toBeVisible()
+      await expect(page.locator('text=1. Lý thuyết').first()).toBeVisible()
+      await expect(page.locator('text=2. Luyện tập').first()).toBeVisible()
+      await expect(page.locator('text=3. Kiểm tra').first()).toBeVisible()
+
+      // Vào khung học của bài (không mở thẳng file PDF), sang bước Kiểm tra
+      await page.locator('a:has-text("Vào học")').first().click()
+      await expect(page).toHaveURL(/\/app\/lessons\/\d+/)
+      await page.click('[data-testid="study-tab-quiz"]')
 
       // Học sinh bấm làm bài kiểm tra nếu có nút "Làm Bài Kiểm Tra Ngay"
-      const takeQuizBtn = page.locator('a:has-text("Làm Bài Kiểm Tra Ngay")').first()
+      const takeQuizBtn = page.locator('[data-testid="start-quiz"]').first()
       if (await takeQuizBtn.isVisible()) {
         await takeQuizBtn.click()
         await expect(page).toHaveURL(/\/app\/assignments\/\d+\/do/)

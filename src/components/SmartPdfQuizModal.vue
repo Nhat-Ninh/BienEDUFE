@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { lessonService } from '@/services/lessonService'
 import { questionNeedsAnswer } from '@/utils/pdfImportMarkdown'
+import { validateImportFile, IMPORT_ACCEPT } from '@/utils/fileUrl'
 import MathRenderer from '@/components/MathRenderer.vue'
 import PdfTemplateGuide from '@/components/PdfTemplateGuide.vue'
 import { gradeLabel, normalizeGrade } from '@/constants/grades'
@@ -218,6 +219,7 @@ onMounted(async () => {
     const data = res.data || res
     quizTitle.value = data.title || quizTitle.value
     quizDescription.value = data.description || ''
+    durationMinutes.value = data.durationMinutes || 15
     dueAt.value = data.dueAt ? toLocalInput(data.dueAt) : ''
     hasSubmissions.value = !!data.hasSubmissions
     parsedQuestions.value = (data.questions || []).map(toEditable)
@@ -236,6 +238,11 @@ const handlePdfUpload = async (event) => {
   const file = event.target.files[0]
   event.target.value = ''
   if (!file) return
+  const invalid = validateImportFile(file)
+  if (invalid) {
+    errorMessage.value = invalid
+    return
+  }
   if (isEditMode.value && !confirmReplace()) return
 
   uploadFileName.value = file.name
@@ -262,7 +269,7 @@ const runParse = async ({ file = null, text = '' }) => {
     applyParsed(data)
     activeStep.value = 2
   } catch (err) {
-    errorMessage.value = err.detail || err.message || 'Không thể đọc nội dung file PDF.'
+    errorMessage.value = err.detail || err.message || 'Không thể đọc nội dung file.'
   } finally {
     isReadingPdf.value = false
   }
@@ -271,7 +278,7 @@ const runParse = async ({ file = null, text = '' }) => {
 // Bóc tách từ văn bản dán vào (cùng bộ bóc tách phía server)
 const handleParseQuestions = async () => {
   if (!rawText.value.trim()) {
-    errorMessage.value = 'Vui lòng dán văn bản hoặc tải lên file PDF đề thi.'
+    errorMessage.value = 'Vui lòng dán văn bản hoặc tải lên file đề thi.'
     return
   }
   if (isEditMode.value && !confirmReplace()) return
@@ -312,16 +319,11 @@ const addEmptyQuestion = () => {
     id: null,
     lessonUnitId: null,
     groupLabel: '',
-    contentMd: 'Câu hỏi mới: Điền nội dung câu hỏi tại đây...',
+    contentMd: '',
     type: 'MULTIPLE_CHOICE',
     difficulty: 'MEDIUM',
-    choices: [
-      { key: 'A', text: 'Phương án A' },
-      { key: 'B', text: 'Phương án B' },
-      { key: 'C', text: 'Phương án C' },
-      { key: 'D', text: 'Phương án D' }
-    ],
-    correctAnswer: 'A',
+    choices: ['A', 'B', 'C', 'D'].map(key => ({ key, text: '' })),
+    correctAnswer: '',
     solutionMd: '',
     warnings: []
   })
@@ -345,6 +347,11 @@ const toPayload = (q) => ({
 const handlePublishQuiz = async () => {
   if (parsedQuestions.value.length === 0) {
     errorMessage.value = 'Đề thi phải có ít nhất 1 câu hỏi.'
+    return
+  }
+  const firstBlank = parsedQuestions.value.findIndex(q => !String(q.contentMd || '').trim())
+  if (firstBlank !== -1) {
+    errorMessage.value = `Câu ${firstBlank + 1} chưa có nội dung. Hãy nhập nội dung hoặc xóa câu này trước khi lưu.`
     return
   }
   const firstMissing = parsedQuestions.value.findIndex(questionNeedsAnswer)
@@ -430,7 +437,7 @@ const handlePublishQuiz = async () => {
             <div class="space-y-0.5">
               <h4 class="text-xs font-bold text-ocean-900">Cách thức hoạt động</h4>
               <p class="text-[11px] text-slate-600">
-                Chỉ cần chọn file PDF đề thi: máy chủ tự đọc và bóc tách từng câu hỏi, công thức LaTeX, các phương án, đáp án đúng và lời giải. Bạn xem lại, sửa nếu cần rồi xuất bản.
+                Chỉ cần chọn file đề thi (PDF, Word .docx, Markdown, văn bản hoặc LaTeX): máy chủ tự đọc và bóc tách từng câu hỏi, công thức, các phương án, đáp án đúng và lời giải. Bạn xem lại, sửa nếu cần rồi xuất bản.
               </p>
               <button
                 type="button"
@@ -439,7 +446,7 @@ const handlePublishQuiz = async () => {
                 class="text-[11px] font-bold text-ocean-700 hover:text-ocean-900 underline underline-offset-2 flex items-center space-x-1 pt-0.5"
               >
                 <HelpCircle class="w-3.5 h-3.5" />
-                <span>Xem định dạng PDF chuẩn & tải file mẫu</span>
+                <span>Xem định dạng file chuẩn & tải file mẫu</span>
               </button>
             </div>
             <button
@@ -456,7 +463,7 @@ const handlePublishQuiz = async () => {
           <div class="border-2 border-dashed border-slate-200 hover:border-ocean-400 rounded-2xl p-6 text-center transition cursor-pointer relative bg-slate-50/50">
             <input
               type="file"
-              accept=".pdf"
+              :accept="IMPORT_ACCEPT"
               data-testid="quiz-pdf-input"
               :disabled="isReadingPdf"
               @change="handlePdfUpload"
@@ -467,10 +474,10 @@ const handlePublishQuiz = async () => {
                 <FileUp class="w-6 h-6" />
               </div>
               <div class="text-xs font-bold text-slate-700">
-                {{ isReadingPdf ? 'Máy chủ đang đọc & bóc tách file PDF...' : uploadFileName ? `Đã chọn: ${uploadFileName}` : 'Nhấn hoặc Kéo thả file PDF đề thi vào đây' }}
+                {{ isReadingPdf ? 'Máy chủ đang đọc & bóc tách file...' : uploadFileName ? `Đã chọn: ${uploadFileName}` : 'Nhấn hoặc kéo thả file đề thi (PDF, Word, .md, .txt, .tex) vào đây' }}
               </div>
               <p class="text-[11px] text-slate-400">
-                PDF xuất từ Word / LaTeX (có thể bôi đen chữ). Tối đa 20MB.
+                PDF có lớp chữ (bôi đen được), Word .docx, Markdown, văn bản hoặc LaTeX. Tối đa 20MB.
               </p>
             </div>
           </div>
@@ -700,11 +707,15 @@ const handlePublishQuiz = async () => {
               <!-- Solution Explanation -->
               <div class="pt-1">
                 <label class="block text-[11px] font-bold text-slate-500 mb-1">Lời giải chi tiết:</label>
-                <input
+                <textarea
                   v-model="q.solutionMd"
+                  rows="2"
                   placeholder="Nhập hướng dẫn giải (tùy chọn)..."
-                  class="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl outline-none"
-                />
+                  class="w-full p-2.5 text-xs font-mono border border-slate-200 rounded-xl outline-none focus:ring-1 focus:ring-ocean-500"
+                ></textarea>
+                <div v-if="q.solutionMd" class="mt-1 p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-800">
+                  <MathRenderer :content="q.solutionMd" />
+                </div>
               </div>
             </div>
           </div>

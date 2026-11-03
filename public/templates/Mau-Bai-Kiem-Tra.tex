@@ -1,0 +1,49 @@
+% Mẫu đề kiểm tra bằng LaTeX — hệ thống đọc trực tiếp file .tex (không cần biên dịch ra PDF).
+% Hỗ trợ kiểu gói ex_test: \begin{ex} ... \choice{A}{B}{C}{D} ... \loigiai{...} \end{ex}
+% Đáp án đúng đánh dấu bằng \True; \choiceTF cho câu Đúng/Sai; \shortans{...} cho trả lời ngắn.
+% Cũng đọc được lớp exam (\question, \begin{choices}\CorrectChoice) và enumerate [label=\Alph*.].
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{ex_test}
+\begin{document}
+
+\begin{ex}
+Đạo hàm của hàm số $y = x^3 - 2x$ tại $x = 1$ bằng
+\choice
+{\True $1$}
+{$3$}
+{$-1$}
+{$2$}
+\loigiai{Ta có $y' = 3x^2 - 2$ nên $y'(1) = 1$.}
+\end{ex}
+
+\begin{ex}
+Cho hàm số $y = \dfrac{2x+1}{x-1}$. Đạo hàm $y'$ bằng
+\choice
+{\True $-\dfrac{3}{(x-1)^2}$}
+{$\dfrac{3}{(x-1)^2}$}
+{$-\dfrac{1}{(x-1)^2}$}
+{$\dfrac{1}{(x-1)^2}$}
+\end{ex}
+
+\begin{ex}
+Cho hàm số $y = x^2$. Xét các mệnh đề:
+\choiceTF
+{Hàm số đồng biến trên $\mathbb{R}$}
+{\True Hàm số có đúng một điểm cực trị}
+{\True Đồ thị hàm số đi qua gốc tọa độ}
+{Hàm số đã cho là hàm số lẻ}
+\end{ex}
+
+\begin{ex}
+Giá trị nhỏ nhất của hàm số $y = x^2 + 1$ bằng bao nhiêu?
+\shortans{$1$}
+\loigiai{Vì $x^2 \ge 0$ nên $y \ge 1$, dấu bằng xảy ra khi $x = 0$.}
+\end{ex}
+
+\begin{ex}
+Chứng minh rằng hàm số $y = 2x + 1$ đồng biến trên $\mathbb{R}$.
+\loigiai{Ta có $y' = 2 > 0$ với mọi $x \in \mathbb{R}$ nên hàm số đồng biến trên $\mathbb{R}$.}
+\end{ex}
+
+\end{document}

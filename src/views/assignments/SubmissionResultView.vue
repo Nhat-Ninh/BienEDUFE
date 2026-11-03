@@ -132,6 +132,15 @@ onMounted(async () => {
           <p class="text-slate-700 italic pl-5">{{ ans.feedbackNote }}</p>
         </div>
 
+        <!-- Lời giải của giáo viên cho câu này -->
+        <div v-if="ans.solutionMd" class="p-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-xs space-y-2" :data-testid="`solution-${idx}`">
+          <div class="flex items-center space-x-1.5 font-bold text-emerald-900">
+            <CheckCircle2 class="w-4 h-4 text-emerald-700" />
+            <span>Lời giải chi tiết:</span>
+          </div>
+          <div class="text-slate-800 text-sm"><MathRenderer :content="ans.solutionMd" /></div>
+        </div>
+
         <!-- Theory Remediation (chỉ hiện khi sai) -->
         <div v-if="ans.theoryMd" class="p-4 bg-sky-50/80 border border-sky-200 rounded-2xl text-xs space-y-2">
           <div class="flex items-center space-x-1.5 font-bold text-sky-900">

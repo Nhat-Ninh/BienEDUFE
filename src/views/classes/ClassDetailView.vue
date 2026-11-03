@@ -6,6 +6,7 @@ import { classService } from '@/services/classService'
 import { assignmentService } from '@/services/assignmentService'
 import { lessonService } from '@/services/lessonService'
 import MathRenderer from '@/components/MathRenderer.vue'
+import { percent } from '@/utils/studyState'
 import SmartPdfQuizModal from '@/components/SmartPdfQuizModal.vue'
 import LessonTrackingModal from '@/components/LessonTrackingModal.vue'
 import { 
@@ -20,6 +21,11 @@ import {
   Sparkles, 
   BarChart3, 
   ExternalLink,
+  Eye,
+  Pencil,
+  PlayCircle,
+  Trophy,
+  PencilLine,
   CheckCircle2,
   AlertCircle
 } from 'lucide-vue-next'
@@ -107,9 +113,35 @@ const openTrackingModal = (lesson) => {
 }
 
 const handleQuizCreated = async () => {
-  actionMessage.value = 'Đã tạo và xuất bản bài kiểm tra thành công!'
+  actionMessage.value = activeLesson.value?.quizAssignmentId
+    ? 'Đã lưu thay đổi bài kiểm tra thành công!'
+    : 'Đã tạo và xuất bản bài kiểm tra thành công!'
   await loadData()
 }
+
+// ───────── Tiến độ học của học sinh trên từng bài ─────────
+const progressOf = (lesson) => {
+  const p = lesson.studentProgress || {}
+  const quizDone = ['SUBMITTED', 'GRADED'].includes(lesson.studentSubmissionStatus)
+  const parts = []
+  if (p.theoryTotal > 0) parts.push(percent(p.theoryDone, p.theoryTotal))
+  if (p.practiceTotal > 0) parts.push(percent(p.practiceAnswered, p.practiceTotal))
+  if (lesson.quizAssignmentId) parts.push(quizDone ? 100 : 0)
+  const overall = parts.length ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : 0
+  return {
+    overall,
+    theory: p.theoryTotal > 0 ? `${p.theoryDone}/${p.theoryTotal} mục` : (lesson.hasTheoryContent || lesson.theoryFileUrl ? 'Chưa học' : 'Chưa có'),
+    theoryDone: p.theoryTotal > 0 && p.theoryDone >= p.theoryTotal,
+    practice: p.practiceTotal > 0 ? `${p.practiceAnswered}/${p.practiceTotal} câu` : (lesson.hasExerciseContent || lesson.exerciseFileUrl ? 'Chưa làm' : 'Chưa có'),
+    practiceDone: p.practiceTotal > 0 && p.practiceAnswered >= p.practiceTotal,
+    quiz: !lesson.quizAssignmentId ? 'Chưa mở'
+      : lesson.studentSubmissionStatus === 'GRADED' ? `${lesson.studentScore ?? 0} điểm`
+      : lesson.studentSubmissionStatus === 'SUBMITTED' ? 'Đã nộp' : 'Chưa làm',
+    quizDone,
+    started: !!p.lastStudiedAt || overall > 0
+  }
+}
+
 
 onMounted(loadData)
 </script>
@@ -213,17 +245,17 @@ onMounted(loadData)
       </button>
     </div>
 
-    <!-- TAB 1: TÀI LIỆU & BÀI HỌC (Lý Thuyết PDF & Bài Tập PDF & Làm Bài Kiểm Tra) -->
-    <div v-if="activeTab === 'lessons'" class="space-y-6">
+    <!-- TAB 1: BÀI HỌC (học sinh: lộ trình học · giáo viên: quản lý & theo dõi) -->
+    <div v-if="activeTab === 'lessons'" class="space-y-5">
       <div v-if="lessons.length === 0" class="py-16 text-center bg-white rounded-3xl border border-slate-200 p-8 space-y-3">
         <div class="w-14 h-14 mx-auto rounded-2xl bg-ocean-50 text-ocean-600 flex items-center justify-center">
           <BookOpen class="w-7 h-7 text-ocean-400" />
         </div>
         <h3 class="text-base font-bold text-slate-800">Chưa có bài học nào trong lớp này</h3>
         <p class="text-xs text-slate-400 max-w-md mx-auto">
-          {{ authStore.isTeacher 
-            ? 'Hãy bấm "Thêm Tài Liệu Mới" để tải lên file PDF Lý thuyết & Bài tập và tạo bài kiểm tra cho học sinh.' 
-            : 'Giáo viên sẽ sớm chia sẻ tài liệu bài giảng và bài tập lên đây.' }}
+          {{ authStore.isTeacher
+            ? 'Hãy bấm "Thêm Tài Liệu Mới" để đưa bài giảng, bài tập và bài kiểm tra lên cho học sinh.'
+            : 'Giáo viên sẽ sớm chia sẻ bài giảng và bài tập lên đây.' }}
         </p>
         <router-link
           v-if="authStore.isTeacher"
@@ -235,213 +267,119 @@ onMounted(loadData)
         </router-link>
       </div>
 
-      <div v-else class="space-y-6">
-        <div 
-          v-for="(lesson, idx) in lessons" 
+      <div v-else class="space-y-5">
+        <article
+          v-for="(lesson, idx) in lessons"
           :key="lesson.id"
-          class="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 sm:p-7 space-y-5 hover:border-ocean-300 transition"
+          :data-testid="`lesson-card-${lesson.id}`"
+          class="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 sm:p-7 space-y-5 hover:border-ocean-300 hover:shadow-md transition"
         >
-          <!-- Lesson Title & Info -->
-          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-4 border-b border-slate-100">
-            <div>
+          <!-- Tiêu đề bài -->
+          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div class="min-w-0">
               <div class="flex items-center space-x-2 mb-1">
-                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-ocean-600 text-white">
-                  Bài {{ idx + 1 }}
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-ocean-600 text-white">Bài {{ idx + 1 }}</span>
+                <span class="text-xs text-slate-400 truncate">Giảng viên: {{ lesson.teacherName }}</span>
+              </div>
+              <h3 class="text-lg font-extrabold text-slate-900 leading-snug">{{ lesson.title }}</h3>
+              <p v-if="lesson.description" class="text-xs text-slate-500 mt-1 leading-relaxed">{{ lesson.description }}</p>
+            </div>
+
+            <!-- Học sinh: vòng tiến độ -->
+            <div v-if="authStore.isStudent" class="flex-shrink-0 sm:w-44 space-y-1.5">
+              <div class="flex items-center justify-between text-[11px] font-bold text-slate-500">
+                <span>Tiến độ</span><span :data-testid="`lesson-progress-${lesson.id}`">{{ progressOf(lesson).overall }}%</span>
+              </div>
+              <div class="h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                <div class="h-full rounded-full bg-gradient-to-r from-ocean-500 to-emerald-500 transition-all duration-500" :style="{ width: progressOf(lesson).overall + '%' }"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3 bước học -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <router-link
+              :to="`/app/lessons/${lesson.id}?tab=theory`"
+              class="group flex items-center gap-3 p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 hover:bg-ocean-50 hover:border-ocean-300 transition"
+            >
+              <span :class="['w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0', authStore.isStudent && progressOf(lesson).theoryDone ? 'bg-emerald-500 text-white' : 'bg-ocean-100 text-ocean-700']">
+                <CheckCircle2 v-if="authStore.isStudent && progressOf(lesson).theoryDone" class="w-5 h-5" />
+                <BookOpen v-else class="w-5 h-5" />
+              </span>
+              <span class="min-w-0">
+                <span class="block text-xs font-extrabold text-slate-800">1. Lý thuyết</span>
+                <span class="block text-[11px] text-slate-500 truncate">
+                  {{ authStore.isStudent ? progressOf(lesson).theory : (lesson.hasTheoryContent ? 'Có bài giảng trên web' : (lesson.theoryFileName ? 'Chỉ có file đính kèm' : 'Chưa có')) }}
                 </span>
-                <span class="text-xs text-slate-400">Giảng viên: {{ lesson.teacherName }}</span>
-              </div>
-              <h3 class="text-lg font-bold text-slate-900 leading-snug">
-                {{ lesson.title }}
-              </h3>
-              <p v-if="lesson.description" class="text-xs text-slate-500 mt-1">
-                {{ lesson.description }}
-              </p>
-            </div>
+              </span>
+            </router-link>
+
+            <router-link
+              :to="`/app/lessons/${lesson.id}?tab=practice`"
+              class="group flex items-center gap-3 p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 hover:bg-indigo-50 hover:border-indigo-300 transition"
+            >
+              <span :class="['w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0', authStore.isStudent && progressOf(lesson).practiceDone ? 'bg-emerald-500 text-white' : 'bg-indigo-100 text-indigo-700']">
+                <CheckCircle2 v-if="authStore.isStudent && progressOf(lesson).practiceDone" class="w-5 h-5" />
+                <PencilLine v-else class="w-5 h-5" />
+              </span>
+              <span class="min-w-0">
+                <span class="block text-xs font-extrabold text-slate-800">2. Luyện tập</span>
+                <span class="block text-[11px] text-slate-500 truncate">
+                  {{ authStore.isStudent ? progressOf(lesson).practice : (lesson.hasExerciseContent ? 'Có bài tập trên web' : (lesson.exerciseFileName ? 'Chỉ có file đính kèm' : 'Chưa có')) }}
+                </span>
+              </span>
+            </router-link>
+
+            <router-link
+              :to="`/app/lessons/${lesson.id}?tab=quiz`"
+              class="group flex items-center gap-3 p-4 rounded-2xl bg-amber-50/60 border border-amber-200/70 hover:bg-amber-50 hover:border-amber-300 transition"
+            >
+              <span :class="['w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0', authStore.isStudent && progressOf(lesson).quizDone ? 'bg-emerald-500 text-white' : 'bg-amber-100 text-amber-700']">
+                <CheckCircle2 v-if="authStore.isStudent && progressOf(lesson).quizDone" class="w-5 h-5" />
+                <Trophy v-else class="w-5 h-5" />
+              </span>
+              <span class="min-w-0">
+                <span class="block text-xs font-extrabold text-slate-800">3. Kiểm tra</span>
+                <span class="block text-[11px] text-slate-500 truncate">
+                  {{ authStore.isStudent ? progressOf(lesson).quiz : (lesson.quizAssignmentId ? `${lesson.quizQuestionsCount || 0} câu · đã xuất bản` : 'Chưa tạo đề') }}
+                </span>
+              </span>
+            </router-link>
           </div>
 
-          <!-- 3-Column Breakdown: Theory | Practice | Quiz -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
-            
-            <!-- 1. Lý Thuyết -->
-            <div class="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 space-y-3 flex flex-col justify-between">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-bold text-ocean-900 flex items-center space-x-1.5">
-                    <FileText class="w-3.5 h-3.5 text-ocean-600" />
-                    <span>1. Lý Thuyết</span>
-                  </span>
-                  <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-ocean-100 text-ocean-800">PDF</span>
-                </div>
+          <!-- Hành động -->
+          <div class="flex flex-wrap items-center gap-2.5 pt-1">
+            <router-link
+              :to="`/app/lessons/${lesson.id}`"
+              :data-testid="`open-lesson-${lesson.id}`"
+              class="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-ocean-600 to-indigo-600 hover:from-ocean-700 hover:to-indigo-700 text-white text-xs font-extrabold shadow-md transition"
+            >
+              <component :is="authStore.isStudent ? PlayCircle : Eye" class="w-4 h-4" />
+              <span>{{ authStore.isStudent ? (progressOf(lesson).started ? 'Tiếp tục học' : 'Vào học') : 'Xem như học sinh' }}</span>
+            </router-link>
 
-                <div v-if="lesson.theoryFileName" class="text-xs font-semibold text-slate-800 truncate" :title="lesson.theoryFileName">
-                  📄 {{ lesson.theoryFileName }}
-                </div>
-                <div v-else class="text-[11px] text-slate-400 italic">
-                  Không có file PDF đính kèm
-                </div>
-
-                <div v-if="lesson.theoryContentMd" class="p-2.5 bg-white rounded-xl border border-slate-100 text-[11px] text-slate-600 max-h-24 overflow-y-auto">
-                  <MathRenderer :content="lesson.theoryContentMd" />
-                </div>
-              </div>
-
-              <div class="pt-2">
-                <a
-                  v-if="lesson.theoryFileUrl"
-                  :href="lesson.theoryFileUrl"
-                  target="_blank"
-                  class="w-full py-2 px-3 bg-white hover:bg-ocean-50 text-ocean-700 border border-ocean-200 rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 transition shadow-2xs"
-                >
-                  <ExternalLink class="w-3.5 h-3.5" />
-                  <span>Xem File PDF Lý Thuyết</span>
-                </a>
-                <span v-else class="text-[11px] text-slate-400 block text-center py-1">Chưa cập nhật file</span>
-              </div>
-            </div>
-
-            <!-- 2. Bài Tập Tự Luyện -->
-            <div class="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 space-y-3 flex flex-col justify-between">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-bold text-indigo-900 flex items-center space-x-1.5">
-                    <BookOpen class="w-3.5 h-3.5 text-indigo-600" />
-                    <span>2. Bài Tập Tự Luyện</span>
-                  </span>
-                  <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">PDF</span>
-                </div>
-
-                <div v-if="lesson.exerciseFileName" class="text-xs font-semibold text-slate-800 truncate" :title="lesson.exerciseFileName">
-                  📝 {{ lesson.exerciseFileName }}
-                </div>
-                <div v-else class="text-[11px] text-slate-400 italic">
-                  Không có file PDF bài tập
-                </div>
-
-                <div v-if="lesson.exerciseContentMd" class="p-2.5 bg-white rounded-xl border border-slate-100 text-[11px] text-slate-600 max-h-24 overflow-y-auto">
-                  <MathRenderer :content="lesson.exerciseContentMd" />
-                </div>
-              </div>
-
-              <div class="pt-2">
-                <a
-                  v-if="lesson.exerciseFileUrl"
-                  :href="lesson.exerciseFileUrl"
-                  target="_blank"
-                  class="w-full py-2 px-3 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 transition shadow-2xs"
-                >
-                  <ExternalLink class="w-3.5 h-3.5" />
-                  <span>Xem File PDF Bài Tập</span>
-                </a>
-                <span v-else class="text-[11px] text-slate-400 block text-center py-1">Chưa cập nhật file</span>
-              </div>
-            </div>
-
-            <!-- 3. Bài Kiểm Tra Theo Bài Lý Thuyết (Interactive Quiz & Tracking) -->
-            <div class="p-4 rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/50 border border-amber-200/80 space-y-3 flex flex-col justify-between">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-bold text-amber-900 flex items-center space-x-1.5">
-                    <Sparkles class="w-3.5 h-3.5 text-amber-600" />
-                    <span>3. Bài Kiểm Tra Đánh Giá</span>
-                  </span>
-
-                  <!-- Status Badge -->
-                  <span 
-                    v-if="authStore.isStudent"
-                    :class="[
-                      'text-[10px] font-bold px-2 py-0.5 rounded',
-                      lesson.studentSubmissionStatus === 'GRADED' ? 'bg-emerald-100 text-emerald-800' :
-                      lesson.studentSubmissionStatus === 'SUBMITTED' ? 'bg-sky-100 text-sky-800' :
-                      lesson.quizAssignmentId ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'
-                    ]"
-                  >
-                    {{ lesson.studentSubmissionStatus === 'GRADED' ? 'Đã chấm điểm' : 
-                       lesson.studentSubmissionStatus === 'SUBMITTED' ? 'Đã nộp bài' : 
-                       lesson.quizAssignmentId ? 'Chưa làm' : 'Chưa mở' }}
-                  </span>
-                  <span 
-                    v-else
-                    :class="[
-                      'text-[10px] font-bold px-2 py-0.5 rounded',
-                      lesson.quizAssignmentId ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                    ]"
-                  >
-                    {{ lesson.quizAssignmentId ? 'Đã xuất bản' : 'Chưa tạo đề' }}
-                  </span>
-                </div>
-
-                <!-- Quiz Info -->
-                <div v-if="lesson.quizAssignmentId" class="space-y-1.5">
-                  <div class="text-xs font-bold text-slate-900 leading-snug">
-                    {{ lesson.quizTitle || 'Bài kiểm tra trắc nghiệm' }}
-                  </div>
-                  <div class="text-[11px] text-slate-600">
-                    Số câu: <strong>{{ lesson.quizQuestionsCount || 0 }} câu hỏi</strong>
-                  </div>
-
-                  <!-- Student Score badge if graded -->
-                  <div v-if="authStore.isStudent && lesson.studentScore != null" class="p-2 bg-emerald-100/80 border border-emerald-300 rounded-xl text-emerald-900 text-xs font-extrabold flex items-center justify-between">
-                    <span>Kết quả đạt được:</span>
-                    <span class="text-sm text-emerald-700">{{ lesson.studentScore }} / 10 điểm</span>
-                  </div>
-                </div>
-
-                <div v-else class="text-[11px] text-slate-500 leading-relaxed">
-                  {{ authStore.isTeacher ? 'Chưa có bài kiểm tra. Bấm tạo đề từ PDF để tự động bóc tách câu hỏi.' : 'Giáo viên chưa mở bài kiểm tra cho bài học này.' }}
-                </div>
-              </div>
-
-              <!-- Action Buttons -->
-              <div class="pt-2">
-                <!-- FOR STUDENT -->
-                <template v-if="authStore.isStudent">
-                  <router-link
-                    v-if="lesson.quizAssignmentId && lesson.studentSubmissionStatus === 'GRADED' && lesson.studentSubmissionId"
-                    :to="`/app/submissions/${lesson.studentSubmissionId}`"
-                    class="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 transition shadow-xs"
-                  >
-                    <span>🔍 Xem Chi Tiết Lời Giải & Điểm</span>
-                  </router-link>
-
-                  <router-link
-                    v-else-if="lesson.quizAssignmentId"
-                    :to="`/app/assignments/${lesson.quizAssignmentId}/do`"
-                    class="w-full py-2 px-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 transition shadow-xs"
-                  >
-                    <span>✍️ Làm Bài Kiểm Tra Ngay</span>
-                  </router-link>
-
-                  <span v-else class="text-[11px] text-slate-400 block text-center py-1">
-                    Chưa có đề kiểm tra
-                  </span>
-                </template>
-
-                <!-- FOR TEACHER -->
-                <template v-else>
-                  <button
-                    v-if="lesson.quizAssignmentId"
-                    @click="openTrackingModal(lesson)"
-                    class="w-full py-2 px-3 bg-ocean-600 hover:bg-ocean-700 text-white rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 transition shadow-xs cursor-pointer"
-                  >
-                    <BarChart3 class="w-3.5 h-3.5" />
-                    <span>Xem Bảng Điểm & Tracking</span>
-                  </button>
-
-                  <button
-                    v-else
-                    @click="openSmartQuizModal(lesson)"
-                    class="w-full py-2 px-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 transition shadow-xs cursor-pointer"
-                  >
-                    <Sparkles class="w-3.5 h-3.5" />
-                    <span>Tạo Đề Thi Từ PDF ⚡</span>
-                  </button>
-                </template>
-              </div>
-
-            </div>
-
+            <template v-if="authStore.isTeacher">
+              <router-link
+                :to="`/app/teacher/lessons?edit=${lesson.id}`"
+                class="inline-flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold transition"
+              >
+                <Pencil class="w-3.5 h-3.5" /><span>Sửa bài học</span>
+              </router-link>
+              <button
+                @click="openSmartQuizModal(lesson)"
+                class="inline-flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-white border border-amber-300 hover:bg-amber-50 text-amber-800 text-xs font-bold transition"
+              >
+                <Sparkles class="w-3.5 h-3.5" /><span>{{ lesson.quizAssignmentId ? 'Sửa đề kiểm tra' : 'Tạo đề kiểm tra' }}</span>
+              </button>
+              <button
+                @click="openTrackingModal(lesson)"
+                class="inline-flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-ocean-50 border border-ocean-200 hover:bg-ocean-100 text-ocean-800 text-xs font-bold transition"
+              >
+                <BarChart3 class="w-3.5 h-3.5" /><span>Tiến độ & bảng điểm</span>
+              </button>
+            </template>
           </div>
-        </div>
+        </article>
       </div>
     </div>
 

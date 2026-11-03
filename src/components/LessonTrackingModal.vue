@@ -153,6 +153,8 @@ onMounted(loadTracking)
                 <tr>
                   <th class="py-3 px-4 font-bold">Học sinh</th>
                   <th class="py-3 px-4 font-bold">Số điện thoại</th>
+                  <th class="py-3 px-4 font-bold">Học lý thuyết</th>
+                  <th class="py-3 px-4 font-bold">Luyện tập</th>
                   <th class="py-3 px-4 font-bold">Trạng thái</th>
                   <th class="py-3 px-4 font-bold text-center">Điểm số</th>
                   <th class="py-3 px-4 font-bold">Thời gian nộp</th>
@@ -169,6 +171,20 @@ onMounted(loadTracking)
                     </div>
                   </td>
                   <td class="py-3 px-4 text-slate-500 font-mono text-[11px]">{{ st.studentPhone || '---' }}</td>
+                  <td class="py-3 px-4" :data-testid="`track-theory-${st.studentId}`">
+                    <div v-if="st.theoryTotal > 0" class="space-y-1 w-24">
+                      <div class="text-[11px] font-bold text-slate-700">{{ st.theoryDone }}/{{ st.theoryTotal }} mục</div>
+                      <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-ocean-500 rounded-full" :style="{ width: Math.round((st.theoryDone / st.theoryTotal) * 100) + '%' }"></div></div>
+                    </div>
+                    <span v-else class="text-[11px] text-slate-300">Chưa học</span>
+                  </td>
+                  <td class="py-3 px-4" :data-testid="`track-practice-${st.studentId}`">
+                    <div v-if="st.practiceTotal > 0" class="space-y-1 w-28">
+                      <div class="text-[11px] font-bold text-slate-700">{{ st.practiceAnswered }}/{{ st.practiceTotal }} câu · đúng {{ st.practiceCorrect }}</div>
+                      <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-indigo-500 rounded-full" :style="{ width: Math.round((st.practiceAnswered / st.practiceTotal) * 100) + '%' }"></div></div>
+                    </div>
+                    <span v-else class="text-[11px] text-slate-300">Chưa làm</span>
+                  </td>
                   <td class="py-3 px-4">
                     <span 
                       :class="[
